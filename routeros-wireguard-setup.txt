@@ -1,0 +1,39 @@
+# this assume client is 10.8.0.2
+
+/interface/wireguard
+add listen-port=51820 name=wg-to-vps
+
+/interface/wireguard
+set wg-to-vps private-key="<CLIENT_PRIVATE_KEY_FROM_VPS>"
+
+# Add VPS peer
+/interface/wireguard/peers
+add interface=wg-to-vps \
+    public-key="<SERVER_PUBLIC_KEY>" \
+    endpoint="<VPS_PUBLIC_IP>:<VPS_PORT>" \
+    allowed-addresses=10.8.0.0/24 \
+    persistent-keepalive=25
+
+# Assign IP address
+/ip/address
+add address=10.8.0.2/24 interface=wg-to-vps
+
+# Add route to VPS
+/ip/route
+add dst-address=10.8.0.1/32 gateway=wg-to-vps
+
+# NAT for outgoing traffic
+/ip/firewall/nat
+add chain=srcnat out-interface=wg-to-vps action=masquerade
+
+# Forward HTTP/HTTPS to local server
+/ip/firewall/nat
+add chain=dstnat in-interface=wg-to-vps \
+    protocol=tcp dst-port=80 \
+    action=dst-nat to-addresses=LOCAL_SERVER_IP to-ports=80
+
+/ip/firewall/nat
+add chain=dstnat in-interface=wg-to-vps \
+    protocol=tcp dst-port=443 \
+    action=dst-nat to-addresses=LOCAL_SERVER_IP to-ports=443
+

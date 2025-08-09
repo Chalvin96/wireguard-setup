@@ -19,6 +19,8 @@ PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg pubkey)
 echo "Selecting random port..."
 WG_PORT=$((50000 + RANDOM % 10000))
 
+MAIN_INTERFACE=$(ip -4 route show default | awk '{print $5}' | head -n1)
+
 echo "Creating configuration..."
 cat > /etc/wireguard/wg0.conf << EOF
 [Interface]
@@ -28,8 +30,8 @@ ListenPort = $WG_PORT
 SaveConfig = true
 
 # Enable NAT
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE
 EOF
 
 echo "Enabling IP forwarding..."

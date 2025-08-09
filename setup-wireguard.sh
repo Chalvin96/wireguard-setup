@@ -10,7 +10,7 @@ fi
 
 echo "Installing WireGuard..."
 apt update
-apt install -y wireguard qrencode
+apt install -y wireguard qrencode ufw
 
 echo "Generating keys..."
 PRIVATE_KEY=$(wg genkey)

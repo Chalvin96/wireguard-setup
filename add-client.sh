@@ -7,8 +7,13 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-CLIENT_NAME=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 16)
-echo "Generated client name: $CLIENT_NAME"
+if [[ $# -ge 1 ]]; then
+    CLIENT_NAME="$1"
+else
+    CLIENT_NAME=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 16)
+fi
+
+echo "Client name: $CLIENT_NAME"
 SERVER_CONFIG="/etc/wireguard/wg0.conf"
 CLIENT_CONFIG="/etc/wireguard/clients/${CLIENT_NAME}.conf"
 
@@ -71,13 +76,6 @@ echo "Client name: $CLIENT_NAME"
 echo "Client IP: $CLIENT_IP"
 echo "Client configuration saved to: $CLIENT_CONFIG"
 
-# Generate QR code and capture base64
-TEMP_QR="/tmp/wg-qr-${CLIENT_NAME}.png"
-QR_BASE64=""
-if qrencode -t PNG -o "$TEMP_QR" < "$CLIENT_CONFIG" 2>/dev/null; then
-    QR_BASE64=$(base64 -w 0 "$TEMP_QR")
-    rm -f "$TEMP_QR"
-    echo "QR Code (Base64): $QR_BASE64"
-else
-    echo "QR code generation failed (install qrencode package)"
-fi
+echo "QR Code:"
+qrencode -t ansiutf8 < "$CLIENT_CONFIG" || echo "QR code generation failed"
+

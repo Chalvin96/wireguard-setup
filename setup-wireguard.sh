@@ -27,7 +27,6 @@ cat > /etc/wireguard/wg0.conf << EOF
 PrivateKey = $PRIVATE_KEY
 Address = 10.8.0.1/24
 ListenPort = $WG_PORT
-SaveConfig = true
 
 # Enable NAT
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $MAIN_INTERFACE -j MASQUERADE

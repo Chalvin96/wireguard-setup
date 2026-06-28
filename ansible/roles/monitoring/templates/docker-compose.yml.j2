@@ -1,0 +1,40 @@
+# Managed by Ansible
+services:
+  loki:
+    image: {{ loki_image }}
+    restart: unless-stopped
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ./loki-data:/loki
+    ports:
+      - "{{ loki_port }}:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  prometheus:
+    image: {{ prometheus_image }}
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-data:/prometheus
+    ports:
+      - "{{ prometheus_port }}:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=14d
+      - --storage.tsdb.path=/prometheus
+
+  grafana:
+    image: {{ grafana_image }}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: "{{ vault_grafana_admin_user }}"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ vault_grafana_admin_password }}"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "{{ grafana_port }}:3000"
+    depends_on:
+      - loki
+      - prometheus

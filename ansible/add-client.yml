@@ -35,6 +35,7 @@
         cmd: wg genkey
       register: add_client_privkey
       changed_when: false
+      no_log: true
 
     - name: Derive public key
       ansible.builtin.command:
@@ -74,7 +75,7 @@
           PublicKey = {{ add_client_pubkey_value }}
           AllowedIPs = 10.8.0.{{ add_client_next_octet }}/32
         marker: "# {mark} ANSIBLE MANAGED PEER {{ client_name }}"
-        mode: "0644"
+        mode: "0600"
 
     - name: Apply peer without tunnel downtime
       ansible.builtin.shell: |

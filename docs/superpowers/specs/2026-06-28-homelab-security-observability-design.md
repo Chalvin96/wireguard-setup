@@ -64,8 +64,9 @@ Triggers on requests to known scan targets: `/.env`, `/wp-admin`, `/wp-login.php
 Threshold: 3 hits within 60 seconds from the same IP.
 
 **Filter 2 — 404 flood**
-Triggers on excessive 404 responses: 10 within 60 seconds from the same IP.
-Catches generic path enumeration tools (dirb, gobuster, ffuf).
+Triggers on excessive 404 responses: 20 within 60 seconds from the same IP.
+Catches generic path enumeration tools (dirb, gobuster, ffuf). Higher threshold than
+scanner paths to avoid false positives from legitimate users hitting broken links.
 
 **Incremental ban durations (bantime.increment):**
 
@@ -161,9 +162,23 @@ The metrics endpoint must bind to the mini PC's LAN IP, not localhost, so the mo
 VM can reach it. The `caddy` Ansible role sets `admin <lan_ip>:2019` in the global block.
 A ufw/nftables rule on the mini PC restricts port 2019 to the monitoring VM's IP only.
 
+### Metrics pipeline — Node Exporter
+
+Node Exporter is installed on the monitoring VM as a systemd service via
+`apt install prometheus-node-exporter`. Prometheus scrapes it on `localhost:9100`
+alongside Caddy metrics. This adds host-level metrics (CPU, memory, disk) to Grafana
+without any Docker complexity.
+
+### Retention
+
+Both Loki and Prometheus retain data for **14 days**. At homelab traffic levels this
+fits well within a 20GB VM disk. Configured via:
+- Loki: `retention_period: 336h` in the Loki config
+- Prometheus: `--storage.tsdb.retention.time=14d` flag
+
 ### Grafana dashboards (Monitoring VM)
 
-Four panels minimum:
+Five panels minimum:
 
 | Panel | Source | Shows |
 |---|---|---|
@@ -171,15 +186,30 @@ Four panels minimum:
 | 4xx/5xx rate | Prometheus | Error rate, spike detection |
 | Top requested paths | Loki | Most common URIs (including scan paths) |
 | Ban timeline | Loki (fail2ban log) | When bans fired, which IPs |
+| Disk usage | Prometheus (Node Exporter) | VM disk % used, alert threshold |
+
+### Grafana alerting
+
+A single alert rule watches the monitoring VM disk usage. When disk exceeds 80%,
+Grafana fires to a Discord webhook (contact point). Webhook URL stored in vault as
+`vault_grafana_discord_webhook` and injected into Grafana's provisioned alerting config
+by the `monitoring` Ansible role.
 
 ---
 
 ## Automation — Ansible
 
-All node configuration is managed by Ansible from a single control node (laptop or
-monitoring VM). The existing shell scripts are replaced by Ansible roles. Mikrotik
-remains a manual step (RouterOS does not support Ansible) and is documented in
-`docs/mikrotik-wireguard-setup.md`.
+All node configuration is managed by Ansible from the **operator's laptop** over LAN
+(mini PC and monitoring VM) and public IP (VPS). The existing shell scripts are replaced
+by Ansible roles. Mikrotik remains a manual step (RouterOS does not support Ansible)
+and is documented in `docs/mikrotik-wireguard-setup.md`.
+
+### Access model
+
+A dedicated `deploy` user is created once per host (manually or via a bootstrap playbook).
+It authenticates via SSH key only (`PasswordAuthentication no`) and has full passwordless
+sudo (`NOPASSWD:ALL`). Security is enforced at the SSH layer — the operator's key never
+leaves their laptop. This mirrors standard CI/CD runner patterns.
 
 ### Repository layout
 
@@ -199,10 +229,14 @@ ansible/
     wireguard-server/             ← VPS: WireGuard server setup
     haproxy/                      ← VPS: HAProxy TCP forward + send-proxy-v2
     vps-blocklist/                ← VPS: nftables blocklist + banagent user + wrapper script
-    caddy/                        ← Mini PC: Caddy install + Caddyfile template
+    caddy/                        ← Mini PC: Caddy install + full Caddyfile template
     fail2ban/                     ← Mini PC: filters, action, SSH key deployment
     promtail/                     ← Mini PC: log shipper config
-    monitoring/                   ← Monitoring VM: Loki + Prometheus + Grafana via Docker Compose
+    monitoring/                   ← Monitoring VM: Docker Compose v2 (Loki + Prometheus +
+                                     Grafana), Node Exporter systemd service, bind mounts
+                                     under /opt/monitoring/, provisioned datasources +
+                                     dashboards + Discord alert contact point
+  add-client.yml                  ← standalone playbook, vars_prompt for client name
   .vault_password                 ← gitignored, used by --vault-password-file
   .gitignore
 ```
@@ -244,12 +278,14 @@ caddy_backend_port: 8080
 fail2ban_ban_base: 300            # 5 minutes in seconds
 fail2ban_findtime: 60
 fail2ban_scanner_maxretry: 3
-fail2ban_flood_maxretry: 10
+fail2ban_flood_maxretry: 20
 
 # Observability
 loki_port: 3100
 prometheus_port: 9090
 grafana_port: 3000
+node_exporter_port: 9100
+grafana_disk_alert_threshold: 80  # percent
 ```
 
 ### Secrets (vault.yml — Ansible Vault encrypted)
@@ -271,6 +307,9 @@ vault_vps_ban_ssh_private_key: |
   ...
   -----END OPENSSH PRIVATE KEY-----
 vault_vps_ban_ssh_public_key: "ssh-ed25519 AAAA..."
+vault_grafana_admin_user: "admin"
+vault_grafana_admin_password: "<strong password>"
+vault_grafana_discord_webhook: "https://discord.com/api/webhooks/..."
 ```
 
 ### Deploy workflow
@@ -289,11 +328,21 @@ ansible-playbook ansible/site.yml --vault-password-file .vault_password
 ansible-playbook ansible/site.yml --limit vps --vault-password-file .vault_password
 ```
 
+### Adding WireGuard clients
+
+`add-client.yml` is a standalone Ansible playbook (not part of `site.yml`). It uses
+`vars_prompt` to ask for the client name interactively, delegates to the VPS to generate
+the keypair and add the peer, then prints the client config via `debug`. Zero-downtime
+via `wg syncconf`.
+
+```bash
+ansible-playbook ansible/add-client.yml --vault-password-file .vault_password
+# Enter client name: phone
+```
+
 ### What stays as documentation (not automated)
 
 - Mikrotik WireGuard config — `docs/mikrotik-wireguard-setup.md`
-- Adding new WireGuard clients — `add-client.sh` retained as a helper script,
-  or wrapped in a standalone playbook `ansible/add-client.yml`
 
 ---
 
@@ -301,7 +350,7 @@ ansible-playbook ansible/site.yml --limit vps --vault-password-file .vault_passw
 
 - IPv6 banning (nftables set is `ipv4_addr` only for now)
 - TLS inspection / HTTPS payload scanning
-- Alerting (Grafana alerts, PagerDuty, etc.) — add later
+- Alerting beyond disk usage (request rate spikes, ban rate anomalies) — add later
 - Suricata / network-layer IDS
 - Kubernetes or container orchestration on the mini PC
 

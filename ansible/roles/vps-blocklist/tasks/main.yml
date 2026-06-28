@@ -42,7 +42,7 @@
   ansible.builtin.user:
     name: banagent
     system: true
-    shell: /usr/sbin/nologin
+    shell: /bin/bash
     create_home: true
     home: /home/banagent
     state: present

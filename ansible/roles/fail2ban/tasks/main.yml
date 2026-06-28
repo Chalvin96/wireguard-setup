@@ -20,6 +20,7 @@
     mode: "0600"
     owner: root
     group: root
+  no_log: true
 
 - name: Scan VPS SSH host key
   ansible.builtin.command:

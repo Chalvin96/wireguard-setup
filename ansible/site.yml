@@ -1,0 +1,45 @@
+---
+# Full stack deploy — runs in dependency order.
+# Run: ansible-playbook ansible/site.yml --vault-password-file .vault_password
+
+- name: VPS — WireGuard server
+  hosts: vps
+  become: true
+  roles:
+    - wireguard-server
+
+- name: VPS — HAProxy ingress
+  hosts: vps
+  become: true
+  roles:
+    - haproxy
+
+- name: VPS — nftables blocklist + banagent
+  hosts: vps
+  become: true
+  roles:
+    - vps-blocklist
+
+- name: Edge — Caddy reverse proxy
+  hosts: edge
+  become: true
+  roles:
+    - caddy
+
+- name: Edge — fail2ban scanner detection
+  hosts: edge
+  become: true
+  roles:
+    - fail2ban
+
+- name: Edge — Promtail log shipping
+  hosts: edge
+  become: true
+  roles:
+    - promtail
+
+- name: Monitoring VM — observability stack
+  hosts: monitoring
+  become: true
+  roles:
+    - monitoring

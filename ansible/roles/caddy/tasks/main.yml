@@ -1,0 +1,89 @@
+---
+- name: Install Caddy apt dependencies
+  ansible.builtin.apt:
+    name:
+      - debian-keyring
+      - debian-archive-keyring
+      - apt-transport-https
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Download Caddy GPG key
+  ansible.builtin.get_url:
+    url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+    dest: /tmp/caddy-gpg.key
+    mode: "0644"
+
+- name: Dearmor Caddy GPG key
+  ansible.builtin.command:
+    cmd: gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /tmp/caddy-gpg.key
+    creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+- name: Add Caddy apt repository
+  ansible.builtin.get_url:
+    url: https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt
+    dest: /etc/apt/sources.list.d/caddy-stable.list
+    mode: "0644"
+
+- name: Install Caddy
+  ansible.builtin.apt:
+    name: caddy
+    state: present
+    update_cache: true
+
+- name: Create Caddy log directory
+  ansible.builtin.file:
+    path: /var/log/caddy
+    state: directory
+    mode: "0755"
+    owner: caddy
+    group: caddy
+
+- name: Write Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    mode: "0644"
+    owner: root
+    group: caddy
+    validate: caddy validate --config %s --adapter caddyfile
+  notify: Restart Caddy
+
+- name: Install nftables on mini PC
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+
+- name: Create /etc/nftables.d directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Restrict Caddy metrics port to monitoring VM
+  ansible.builtin.template:
+    src: caddy-metrics.nft.j2
+    dest: /etc/nftables.d/caddy-metrics.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Include caddy-metrics in /etc/nftables.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/caddy-metrics.nft"'
+    state: present
+  notify: Reload nftables
+
+- name: Enable nftables on mini PC
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Enable and start Caddy
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started

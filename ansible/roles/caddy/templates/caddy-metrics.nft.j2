@@ -1,0 +1,8 @@
+flush table inet caddy-metrics
+
+table inet caddy-metrics {
+    chain input {
+        type filter hook input priority -5; policy accept;
+        tcp dport 2019 ip saddr != {{ monitor_vm_lan_ip }} drop
+    }
+}

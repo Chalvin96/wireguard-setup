@@ -2,6 +2,7 @@
 {
     # Admin API bound to LAN IP only — Prometheus scrapes /metrics here
     admin {{ minipc_lan_ip }}:2019
+    metrics
 
     servers {
         protocols h1 h2 h3
@@ -13,7 +14,7 @@
     listener_wrappers {
         proxy_protocol {
             timeout 2s
-            allow {{ wireguard_client_ip }}
+            allow {{ wireguard_server_ip }}
         }
         tls
     }
@@ -24,16 +25,15 @@
     log {
         output file /var/log/caddy/access.log {
             roll_size 10mb
-            roll_keep 5
+            roll_keep 14
         }
         format json
     }
 }
 
-# ── Add your site blocks below, or in /etc/caddy/conf.d/*.caddy ───────────────
-# Example:
-# {{ caddy_domain }} {
-#     import proxy_protocol
-#     import access_log
-#     reverse_proxy localhost:{{ caddy_backend_port }}
-# }
+# ── Site blocks ────────────────────────────────────────────────────────────────
+{{ caddy_domain }} {
+    import proxy_protocol
+    import access_log
+    reverse_proxy localhost:{{ caddy_backend_port }}
+}

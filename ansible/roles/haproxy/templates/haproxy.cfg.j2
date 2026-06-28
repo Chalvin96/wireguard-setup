@@ -1,0 +1,31 @@
+# Managed by Ansible — do not edit manually
+global
+    log /dev/log local0
+    maxconn 4096
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    user haproxy
+    group haproxy
+
+defaults
+    log     global
+    mode    tcp
+    option  tcplog
+    timeout connect 5s
+    timeout client  50s
+    timeout server  50s
+
+frontend http_in
+    bind *:{{ haproxy_http_port }}
+    default_backend homelab_http
+
+frontend https_in
+    bind *:{{ haproxy_https_port }}
+    default_backend homelab_https
+
+backend homelab_http
+    option tcp-check
+    server homelab {{ wireguard_client_ip }}:{{ haproxy_http_port }} check send-proxy-v2
+
+backend homelab_https
+    option tcp-check
+    server homelab {{ wireguard_client_ip }}:{{ haproxy_https_port }} check send-proxy-v2

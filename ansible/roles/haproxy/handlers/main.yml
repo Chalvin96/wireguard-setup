@@ -1,0 +1,5 @@
+---
+- name: Validate and restart HAProxy
+  ansible.builtin.shell:
+    cmd: haproxy -c -f /etc/haproxy/haproxy.cfg && systemctl restart haproxy
+  changed_when: true

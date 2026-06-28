@@ -1,0 +1,28 @@
+---
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+
+- name: Backup existing config once
+  ansible.builtin.copy:
+    src: /etc/haproxy/haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg.orig
+    remote_src: true
+    force: false
+    mode: "0644"
+  failed_when: false
+
+- name: Write HAProxy config
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: "0644"
+  notify: Validate and restart HAProxy
+
+- name: Enable HAProxy
+  ansible.builtin.systemd:
+    name: haproxy
+    enabled: true
+    state: started

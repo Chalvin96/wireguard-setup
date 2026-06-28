@@ -79,9 +79,16 @@ Catches generic path enumeration tools (dirb, gobuster, ffuf).
 
 ### Enforcement — nftables on VPS
 
-One-time VPS setup creates a named set with timeout support:
+**ufw interaction:** ufw manages its own nftables rules on Ubuntu. To avoid conflicts,
+the `vps-blocklist` Ansible role disables and stops ufw (`systemctl disable --now ufw`)
+before writing the blocklist table. HAProxy is already handling ingress; ufw is not needed.
+
+The blocklist is declared in `/etc/nftables.d/blocklist.nft` and loaded via
+`nft -f` — idempotent because the file begins with `flush table inet filter` scoped
+to this table only. The `nftables` systemd service loads it on boot.
 
 ```
+# /etc/nftables.d/blocklist.nft
 table inet filter {
     set blocklist {
         type ipv4_addr
@@ -126,26 +133,33 @@ actionunban =    # empty — nftables TTL handles expiry
 
 ```
 Mini PC: Promtail
-  └── tails /var/log/caddy/access.log
-  └── ships to Loki on Monitoring VM (port 3100)
+  ├── tails /var/log/caddy/access.log   (label: job=caddy)
+  ├── tails /var/log/fail2ban.log       (label: job=fail2ban)
+  └── ships both to Loki on Monitoring VM (port 3100)
 
 Monitoring VM: Loki
   └── stores and indexes log streams
 ```
 
 Promtail is the only observability component on the mini PC. Footprint: ~50 MB RAM.
+Both log files are tailed so the Grafana ban timeline panel has a data source
+(`job=fail2ban` stream in Loki).
 
 ### Metrics pipeline
 
 ```
-Mini PC: Caddy metrics endpoint (localhost:2019/metrics, Prometheus format)
+Mini PC: Caddy metrics endpoint (<lan_ip>:2019/metrics, Prometheus format)
 
 Monitoring VM: Prometheus
-  └── scrapes Caddy metrics every 15s
+  └── scrapes Caddy metrics every 15s over LAN
 ```
 
 Caddy exposes request count, latency histograms, and active connections out of the box
 with `metrics` in the global Caddyfile block. No extra exporter needed.
+
+The metrics endpoint must bind to the mini PC's LAN IP, not localhost, so the monitoring
+VM can reach it. The `caddy` Ansible role sets `admin <lan_ip>:2019` in the global block.
+A ufw/nftables rule on the mini PC restricts port 2019 to the monitoring VM's IP only.
 
 ### Grafana dashboards (Monitoring VM)
 
@@ -240,14 +254,23 @@ grafana_port: 3000
 
 ### Secrets (vault.yml — Ansible Vault encrypted)
 
+WireGuard keypairs are **pre-generated** on the operator's machine before the first run
+(`wg genkey | tee private.key | wg pubkey > public.key`), then stored in the vault.
+The roles consume them from vault variables and write keys to the correct paths on each
+host. This avoids a chicken-and-egg problem where the role would need to generate keys
+and then somehow populate the vault.
+
 ```yaml
 # ansible-vault edit group_vars/all/vault.yml
-vault_wireguard_server_private_key: "<key>"
-vault_wireguard_client_private_key: "<key>"
+vault_wireguard_server_private_key: "<wg private key>"
+vault_wireguard_server_public_key: "<wg public key>"
+vault_wireguard_client_private_key: "<wg private key>"
+vault_wireguard_client_public_key: "<wg public key>"
 vault_vps_ban_ssh_private_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   ...
   -----END OPENSSH PRIVATE KEY-----
+vault_vps_ban_ssh_public_key: "ssh-ed25519 AAAA..."
 ```
 
 ### Deploy workflow

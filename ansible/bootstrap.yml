@@ -1,0 +1,56 @@
+---
+# Run once per host as your existing named user.
+# ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
+- name: Bootstrap deploy user
+  hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Create deploy group
+      ansible.builtin.group:
+        name: deploy
+        state: present
+
+    - name: Create deploy user
+      ansible.builtin.user:
+        name: deploy
+        group: deploy
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Create .ssh directory
+      ansible.builtin.file:
+        path: /home/deploy/.ssh
+        state: directory
+        mode: "0700"
+        owner: deploy
+        group: deploy
+
+    - name: Add operator SSH public key
+      ansible.posix.authorized_key:
+        user: deploy
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+        state: present
+
+    - name: Configure passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/deploy
+        content: "deploy ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
+    - name: Disable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+      notify: Restart sshd
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted

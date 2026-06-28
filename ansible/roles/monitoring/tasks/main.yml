@@ -1,0 +1,154 @@
+---
+# ── Docker CE ──────────────────────────────────────────────────────────────────
+- name: Install Docker dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Ensure apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Determine dpkg architecture
+  ansible.builtin.command: dpkg --print-architecture
+  register: monitoring_dpkg_arch
+  changed_when: false
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ monitoring_dpkg_arch.stdout }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker CE and Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+# ── Node Exporter ──────────────────────────────────────────────────────────────
+- name: Install Node Exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    update_cache: true
+
+- name: Enable Node Exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+
+# ── Bind mounts ────────────────────────────────────────────────────────────────
+- name: Create /opt/monitoring directory tree
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/monitoring
+    - /opt/monitoring/loki-data
+    - /opt/monitoring/prometheus-data
+    - /opt/monitoring/grafana-data
+    - /opt/monitoring/grafana/provisioning/datasources
+    - /opt/monitoring/grafana/provisioning/dashboards
+    - /opt/monitoring/grafana/provisioning/alerting
+
+- name: Fix grafana-data ownership (runs as UID 472)
+  ansible.builtin.file:
+    path: /opt/monitoring/grafana-data
+    owner: "472"
+    group: "472"
+    state: directory
+    mode: "0755"
+
+# ── Config files ───────────────────────────────────────────────────────────────
+- name: Write docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/monitoring/docker-compose.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Write Loki config
+  ansible.builtin.template:
+    src: loki-config.yml.j2
+    dest: /opt/monitoring/loki-config.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Write Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/monitoring/prometheus.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+# ── Grafana provisioning ───────────────────────────────────────────────────────
+- name: Copy Grafana datasources
+  ansible.builtin.copy:
+    src: grafana/provisioning/datasources/datasources.yml
+    dest: /opt/monitoring/grafana/provisioning/datasources/datasources.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Copy Grafana dashboards provider
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/dashboards.yml
+    dest: /opt/monitoring/grafana/provisioning/dashboards/dashboards.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Copy Grafana homelab dashboard
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/homelab-dashboard.json
+    dest: /opt/monitoring/grafana/provisioning/dashboards/homelab-dashboard.json
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Write Grafana contact point (Discord webhook from vault)
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/contactpoints.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Write Grafana alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/rules.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+# ── Start stack ────────────────────────────────────────────────────────────────
+- name: Start monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    remove_orphans: true

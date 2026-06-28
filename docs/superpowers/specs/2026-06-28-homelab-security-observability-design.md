@@ -159,8 +159,10 @@ Caddy exposes request count, latency histograms, and active connections out of t
 with `metrics` in the global Caddyfile block. No extra exporter needed.
 
 The metrics endpoint must bind to the mini PC's LAN IP, not localhost, so the monitoring
-VM can reach it. The `caddy` Ansible role sets `admin <lan_ip>:2019` in the global block.
-A ufw/nftables rule on the mini PC restricts port 2019 to the monitoring VM's IP only.
+VM can reach it. The `caddy` Ansible role sets `admin {{ minipc_lan_ip }}:2019` in the
+global block (variable from `config.yml`). The `caddy` role also writes a nftables rule
+on the mini PC that allows port 2019 only from `{{ monitor_vm_lan_ip }}` and drops all
+other access. Both `minipc_lan_ip` and `monitor_vm_lan_ip` are config variables.
 
 ### Metrics pipeline — Node Exporter
 
@@ -206,10 +208,20 @@ and is documented in `docs/mikrotik-wireguard-setup.md`.
 
 ### Access model
 
-A dedicated `deploy` user is created once per host (manually or via a bootstrap playbook).
-It authenticates via SSH key only (`PasswordAuthentication no`) and has full passwordless
-sudo (`NOPASSWD:ALL`). Security is enforced at the SSH layer — the operator's key never
-leaves their laptop. This mirrors standard CI/CD runner patterns.
+A dedicated `deploy` user is created via a **bootstrap playbook** (`ansible/bootstrap.yml`)
+that runs once per host as the existing named user (before `deploy` exists). It creates
+the user, copies the operator's SSH public key, and writes the sudoers entry. After
+bootstrap, all subsequent playbooks run as `deploy`.
+
+```bash
+# One-time per host
+ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass \
+  --limit vps
+```
+
+`deploy` authenticates via SSH key only (`PasswordAuthentication no`) and has full
+passwordless sudo (`NOPASSWD:ALL`). Security is enforced at the SSH layer — the
+operator's key never leaves their laptop. This mirrors standard CI/CD runner patterns.
 
 ### Repository layout
 
@@ -232,10 +244,13 @@ ansible/
     caddy/                        ← Mini PC: Caddy install + full Caddyfile template
     fail2ban/                     ← Mini PC: filters, action, SSH key deployment
     promtail/                     ← Mini PC: log shipper config
-    monitoring/                   ← Monitoring VM: Docker Compose v2 (Loki + Prometheus +
-                                     Grafana), Node Exporter systemd service, bind mounts
-                                     under /opt/monitoring/, provisioned datasources +
-                                     dashboards + Discord alert contact point
+    monitoring/                   ← Monitoring VM: Docker CE install, Docker Compose v2
+                                     stack (Loki + Prometheus + Grafana), Node Exporter
+                                     systemd service, bind mounts under /opt/monitoring/,
+                                     Grafana provisioning via YAML files (datasources,
+                                     dashboard JSON, Discord alert contact point + rule)
+  bootstrap.yml                   ← one-time per host: create deploy user, copy SSH key,
+                                     write sudoers — runs as existing named user
   add-client.yml                  ← standalone playbook, vars_prompt for client name
   .vault_password                 ← gitignored, used by --vault-password-file
   .gitignore
@@ -268,7 +283,9 @@ all:
 wireguard_server_ip: "10.8.0.1"
 wireguard_client_ip: "10.8.0.2"
 wireguard_port: 51820
-vps_public_ip: "1.2.3.4"         # real VPS IP
+vps_public_ip: "1.2.3.4"         # public IP of VPS
+minipc_lan_ip: "192.168.1.x"     # LAN IP of mini PC (for Caddy admin bind + firewall)
+monitor_vm_lan_ip: "192.168.1.x" # LAN IP of monitoring VM (for firewall allowlist)
 
 # Caddy
 caddy_domain: "example.com"
@@ -312,14 +329,32 @@ vault_grafana_admin_password: "<strong password>"
 vault_grafana_discord_webhook: "https://discord.com/api/webhooks/..."
 ```
 
+### Role execution order
+
+`site.yml` runs roles in dependency order:
+
+```
+1. bootstrap.yml      (one-time, separate playbook)
+2. VPS:   wireguard-server → haproxy → vps-blocklist
+3. Edge:  caddy → fail2ban → promtail
+4. VM:    monitoring
+```
+
+`caddy` must run before `fail2ban` and `promtail` (log files must exist).
+`monitoring` role opens port 3100 (Loki) on the monitoring VM's firewall, restricted
+to `{{ minipc_lan_ip }}` only — Promtail is the only allowed sender.
+
 ### Deploy workflow
 
 ```bash
-# First time
+# First time — bootstrap deploy user on each host
+ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
+
+# Fill in config
 cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
 cp ansible/group_vars/all/config.yml.example ansible/group_vars/all/config.yml
-# edit both files with real values
-ansible-vault edit ansible/group_vars/all/vault.yml   # add real secrets
+# edit both files, then add secrets:
+ansible-vault edit ansible/group_vars/all/vault.yml
 
 # Deploy everything
 ansible-playbook ansible/site.yml --vault-password-file .vault_password

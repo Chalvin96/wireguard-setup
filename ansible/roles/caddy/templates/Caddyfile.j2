@@ -1,0 +1,39 @@
+# Managed by Ansible — service blocks go in /etc/caddy/conf.d/*.caddy
+{
+    # Admin API bound to LAN IP only — Prometheus scrapes /metrics here
+    admin {{ minipc_lan_ip }}:2019
+
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+# Reusable PROXY Protocol v2 unwrapper — import in site blocks
+(proxy_protocol) {
+    listener_wrappers {
+        proxy_protocol {
+            timeout 2s
+            allow {{ wireguard_client_ip }}
+        }
+        tls
+    }
+}
+
+# Reusable JSON access logging — import in site blocks
+(access_log) {
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+# ── Add your site blocks below, or in /etc/caddy/conf.d/*.caddy ───────────────
+# Example:
+# {{ caddy_domain }} {
+#     import proxy_protocol
+#     import access_log
+#     reverse_proxy localhost:{{ caddy_backend_port }}
+# }

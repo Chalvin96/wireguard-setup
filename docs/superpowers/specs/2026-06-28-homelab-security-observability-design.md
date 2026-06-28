@@ -160,15 +160,117 @@ Four panels minimum:
 
 ---
 
-## Scripts Affected
+## Automation — Ansible
 
-| Script | Change |
-|---|---|
-| `setup-homelab-waf.sh` | Full rewrite — remove CrowdSec, add fail2ban + Promtail install and config |
-| New: `setup-vps-blocklist.sh` | One-time nftables blocklist setup on VPS + banagent user + wrapper script |
-| New: `setup-monitoring.sh` | Installs Loki, Prometheus, Grafana on monitoring VM via Docker Compose |
+All node configuration is managed by Ansible from a single control node (laptop or
+monitoring VM). The existing shell scripts are replaced by Ansible roles. Mikrotik
+remains a manual step (RouterOS does not support Ansible) and is documented in
+`docs/mikrotik-wireguard-setup.md`.
 
-`setup-haproxy.sh`, `setup-wireguard.sh`, `add-client.sh`, and `add-port-forward.sh` are unchanged.
+### Repository layout
+
+```
+ansible/
+  site.yml                        ← top-level playbook, runs all roles
+  inventory/
+    hosts.yml.example             ← committed, placeholder IPs, shows structure
+    hosts.yml                     ← gitignored, real IPs
+  group_vars/
+    all/
+      config.yml.example          ← committed, every variable documented with comments
+      config.yml                  ← gitignored, real values (domain, ports, interface names)
+      vault.yml                   ← committed, Ansible Vault encrypted
+                                     contains: wireguard private keys, vps_ban SSH private key
+  roles/
+    wireguard-server/             ← VPS: WireGuard server setup
+    haproxy/                      ← VPS: HAProxy TCP forward + send-proxy-v2
+    vps-blocklist/                ← VPS: nftables blocklist + banagent user + wrapper script
+    caddy/                        ← Mini PC: Caddy install + Caddyfile template
+    fail2ban/                     ← Mini PC: filters, action, SSH key deployment
+    promtail/                     ← Mini PC: log shipper config
+    monitoring/                   ← Monitoring VM: Loki + Prometheus + Grafana via Docker Compose
+  .vault_password                 ← gitignored, used by --vault-password-file
+  .gitignore
+```
+
+### Inventory groups
+
+```yaml
+# inventory/hosts.yml.example
+all:
+  children:
+    vps:
+      hosts:
+        vps-01:
+          ansible_host: 1.2.3.4        # replace with real VPS IP
+    edge:
+      hosts:
+        minipc:
+          ansible_host: 192.168.1.x    # replace with mini PC LAN IP
+    monitoring:
+      hosts:
+        monitor-vm:
+          ansible_host: 192.168.1.x    # replace with monitoring VM LAN IP
+```
+
+### Configuration variables (config.yml.example)
+
+```yaml
+# Network
+wireguard_server_ip: "10.8.0.1"
+wireguard_client_ip: "10.8.0.2"
+wireguard_port: 51820
+vps_public_ip: "1.2.3.4"         # real VPS IP
+
+# Caddy
+caddy_domain: "example.com"
+caddy_backend_port: 8080
+
+# fail2ban
+fail2ban_ban_base: 300            # 5 minutes in seconds
+fail2ban_findtime: 60
+fail2ban_scanner_maxretry: 3
+fail2ban_flood_maxretry: 10
+
+# Observability
+loki_port: 3100
+prometheus_port: 9090
+grafana_port: 3000
+```
+
+### Secrets (vault.yml — Ansible Vault encrypted)
+
+```yaml
+# ansible-vault edit group_vars/all/vault.yml
+vault_wireguard_server_private_key: "<key>"
+vault_wireguard_client_private_key: "<key>"
+vault_vps_ban_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  ...
+  -----END OPENSSH PRIVATE KEY-----
+```
+
+### Deploy workflow
+
+```bash
+# First time
+cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
+cp ansible/group_vars/all/config.yml.example ansible/group_vars/all/config.yml
+# edit both files with real values
+ansible-vault edit ansible/group_vars/all/vault.yml   # add real secrets
+
+# Deploy everything
+ansible-playbook ansible/site.yml --vault-password-file .vault_password
+
+# Deploy one node only
+ansible-playbook ansible/site.yml --limit vps --vault-password-file .vault_password
+```
+
+### What stays as documentation (not automated)
+
+- Mikrotik WireGuard config — `docs/mikrotik-wireguard-setup.md`
+- Adding new WireGuard clients — `add-client.sh` retained as a helper script,
+  or wrapped in a standalone playbook `ansible/add-client.yml`
 
 ---
 
@@ -188,6 +290,8 @@ Four panels minimum:
 |---|---|
 | Networking | WireGuard, HAProxy TCP mode, PROXY Protocol v2, nftables |
 | Security ops | fail2ban incremental banning, least-privilege SSH, automated enforcement |
+| Configuration management | Ansible roles, inventory groups, idempotent playbooks |
+| Secrets management | Ansible Vault, gitignored files, `.example` templates |
 | Log aggregation | Promtail → Loki multi-node pipeline |
 | Metrics | Prometheus scrape, Caddy native metrics |
 | Observability | Grafana dashboards across logs + metrics |

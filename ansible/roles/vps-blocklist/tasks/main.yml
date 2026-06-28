@@ -1,0 +1,79 @@
+---
+- name: Disable ufw (conflicts with nftables)
+  ansible.builtin.systemd:
+    name: ufw
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+
+- name: Create /etc/nftables.d directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Write blocklist.nft
+  ansible.builtin.template:
+    src: blocklist.nft.j2
+    dest: /etc/nftables.d/blocklist.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Include blocklist in /etc/nftables.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/blocklist.nft"'
+    state: present
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Create banagent system user
+  ansible.builtin.user:
+    name: banagent
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: true
+    home: /home/banagent
+    state: present
+
+- name: Create banagent .ssh directory
+  ansible.builtin.file:
+    path: /home/banagent/.ssh
+    state: directory
+    mode: "0700"
+    owner: banagent
+    group: banagent
+
+- name: Deploy ban-ip wrapper script
+  ansible.builtin.copy:
+    src: ban-ip
+    dest: /usr/local/bin/ban-ip
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Configure sudoers for banagent
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/banagent
+    content: "banagent ALL=(root) NOPASSWD: /usr/local/bin/ban-ip\n"
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Deploy vps_ban public key with forced command
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: /home/banagent/.ssh/authorized_keys
+    mode: "0600"
+    owner: banagent
+    group: banagent

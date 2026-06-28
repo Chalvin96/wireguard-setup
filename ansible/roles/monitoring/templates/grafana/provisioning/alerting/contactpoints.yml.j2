@@ -1,0 +1,11 @@
+# Managed by Ansible
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: discord
+    receivers:
+      - uid: discord-webhook
+        type: discord
+        settings:
+          url: "{{ vault_grafana_discord_webhook }}"
+        disableResolveMessage: false

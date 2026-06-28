@@ -1,0 +1,50 @@
+# Managed by Ansible
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: disk-alerts
+    folder: Homelab
+    interval: 5m
+    rules:
+      - uid: disk-usage-high
+        title: Disk Usage High
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: "(1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"}) * 100"
+              instant: false
+              refId: A
+          - refId: C
+            queryType: ""
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ grafana_disk_alert_threshold }}]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              expression: A
+              refId: C
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Monitoring VM disk usage exceeded {{ grafana_disk_alert_threshold }}%"
+        labels:
+          severity: warning
+        isPaused: false

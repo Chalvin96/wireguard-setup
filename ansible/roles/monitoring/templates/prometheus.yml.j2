@@ -12,4 +12,4 @@ scrape_configs:
   - job_name: node-exporter
     static_configs:
       - targets:
-          - "localhost:{{ node_exporter_port }}"
+          - "host-gateway:{{ node_exporter_port }}"

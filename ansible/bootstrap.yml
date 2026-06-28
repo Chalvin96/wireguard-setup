@@ -1,6 +1,7 @@
 ---
 # Run once per host as your existing named user.
 # ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
+# Prerequisites: ansible-galaxy collection install -r requirements.yml
 - name: Bootstrap deploy user
   hosts: all
   gather_facts: false

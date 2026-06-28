@@ -1,0 +1,47 @@
+---
+- name: Ensure apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Grafana GPG key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /etc/apt/keyrings/grafana.asc
+    mode: "0644"
+
+- name: Add Grafana apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
+    filename: grafana
+    state: present
+    update_cache: true
+
+- name: Install Promtail
+  ansible.builtin.apt:
+    name: promtail
+    state: present
+    update_cache: true
+
+- name: Write Promtail config
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: /etc/promtail/config.yml
+    mode: "0644"
+  notify: Restart Promtail
+
+- name: Add promtail user to caddy and adm groups (log access)
+  ansible.builtin.user:
+    name: promtail
+    groups:
+      - caddy
+      - adm
+    append: true
+  notify: Restart Promtail
+
+- name: Enable and start Promtail
+  ansible.builtin.systemd:
+    name: promtail
+    enabled: true
+    state: started

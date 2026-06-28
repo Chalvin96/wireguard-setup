@@ -1,0 +1,34 @@
+# ── Network ────────────────────────────────────────────────────────────────────
+wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
+wireguard_client_ip: "10.8.0.2"       # Mikrotik WireGuard tunnel IP
+wireguard_port: 51820
+vps_public_ip: "1.2.3.4"             # VPS public internet IP
+
+minipc_lan_ip: "192.168.1.x"         # mini PC LAN IP (Caddy admin bind + firewall)
+monitor_vm_lan_ip: "192.168.1.x"     # monitoring VM LAN IP (Prometheus scrape source)
+
+# ── HAProxy ────────────────────────────────────────────────────────────────────
+haproxy_http_port: 80
+haproxy_https_port: 443
+
+# ── Caddy ──────────────────────────────────────────────────────────────────────
+caddy_domain: "example.com"           # primary domain (placeholder for user's Caddyfile)
+caddy_backend_port: 8080              # example backend port
+
+# ── fail2ban ───────────────────────────────────────────────────────────────────
+fail2ban_ban_base: 300                # 5 minutes (seconds)
+fail2ban_findtime: 60
+fail2ban_scanner_maxretry: 3
+fail2ban_flood_maxretry: 20
+
+# ── Observability ──────────────────────────────────────────────────────────────
+loki_port: 3100
+prometheus_port: 9090
+grafana_port: 3000
+node_exporter_port: 9100
+grafana_disk_alert_threshold: 80      # percent
+
+# ── Image versions (pinned — change intentionally to upgrade) ──────────────────
+loki_image: "grafana/loki:3.1.0"
+prometheus_image: "prom/prometheus:v2.53.0"
+grafana_image: "grafana/grafana:11.1.0"

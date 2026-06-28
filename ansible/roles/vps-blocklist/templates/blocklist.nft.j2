@@ -1,6 +1,7 @@
 #!/usr/sbin/nft -f
 # Managed by Ansible — do not edit manually
 
+add table inet blocklist
 flush table inet blocklist
 
 table inet blocklist {

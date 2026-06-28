@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
-IP="$1"
-TIMEOUT="$2"
+if [[ -n "$SSH_ORIGINAL_COMMAND" ]]; then
+    read -r IP TIMEOUT <<< "$SSH_ORIGINAL_COMMAND"
+else
+    IP="$1"
+    TIMEOUT="$2"
+fi
 [[ "$IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] \
   || { echo "Error: invalid IP '$IP'"; exit 1; }
 [[ "$TIMEOUT" =~ ^[0-9]+$ ]] \

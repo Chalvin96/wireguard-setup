@@ -1,6 +1,6 @@
 # ── Network ────────────────────────────────────────────────────────────────────
 wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
-wireguard_client_ip: "10.8.0.2"       # Mikrotik WireGuard tunnel IP
+wireguard_client_ip: "10.8.0.2"       # edge node WireGuard tunnel IP (assigned to wg0 on Mini PC; Mikrotik routes traffic to it)
 wireguard_port: 51820
 ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 
@@ -40,5 +40,6 @@ crowdsec_hub_collections:
   - crowdsecurity/caddy
   - crowdsecurity/base-http-scenarios
   - crowdsecurity/http-cve
+crowdsec_blocklist_image: "ghcr.io/wolffcatskyy/crowdsec-blocklist-import:latest"  # pin to a digest in production
 crowdsec_blocklist_feeds: "ipsum,spamhaus_drop,spamhaus_edrop,blocklistde,firehol_level1,firehol_level2,emerging_threats,dshield,ciarmy,talos,greensnow,stopforumspam,tor_exits"
 crowdsec_blocklist_interval: "86400"

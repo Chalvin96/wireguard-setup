@@ -20,14 +20,14 @@
   tasks:
     - name: Check client does not already exist
       ansible.builtin.command:
-        cmd: 'grep -c "# Client: {{ client_name }}" /etc/wireguard/wg0.conf'
+        cmd: 'grep -c "# Client: {{ client_name }}" /etc/wireguard/wg0-peers.conf'
       register: add_client_existing
       changed_when: false
       failed_when: add_client_existing.rc not in [0, 1]
 
     - name: Abort if client already exists
       ansible.builtin.fail:
-        msg: "Client '{{ client_name }}' already exists in wg0.conf"
+        msg: "Client '{{ client_name }}' already exists in wg0-peers.conf"
       when: add_client_existing.stdout | int > 0
 
     - name: Generate WireGuard private key
@@ -51,7 +51,7 @@
 
     - name: Read current AllowedIPs
       ansible.builtin.command:
-        cmd: grep -oP '10\.8\.0\.\K\d+' /etc/wireguard/wg0.conf
+        cmd: grep -oP '10\.8\.0\.\K\d+' /etc/wireguard/wg0-peers.conf
       register: add_client_used_octets
       changed_when: false
       failed_when: add_client_used_octets.rc not in [0, 1]
@@ -65,9 +65,9 @@
             | first
           }}
 
-    - name: Add peer block to wg0.conf
+    - name: Add peer block to wg0-peers.conf
       ansible.builtin.blockinfile:
-        path: /etc/wireguard/wg0.conf
+        path: /etc/wireguard/wg0-peers.conf
         create: true
         block: |
           [Peer]
@@ -78,11 +78,8 @@
         mode: "0600"
 
     - name: Apply peer without tunnel downtime
-      ansible.builtin.shell: |
-        set -o pipefail
-        wg syncconf wg0 <(wg-quick strip wg0)
-      args:
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: wg addconf wg0 /etc/wireguard/wg0-peers.conf
       changed_when: true
 
     - name: Print client config

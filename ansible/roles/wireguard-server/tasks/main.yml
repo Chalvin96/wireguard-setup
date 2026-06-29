@@ -22,6 +22,15 @@
     group: root
   notify: Restart wg-quick@wg0
 
+- name: Create wg0-peers.conf if not present
+  ansible.builtin.copy:
+    content: ""
+    dest: /etc/wireguard/wg0-peers.conf
+    mode: "0600"
+    owner: root
+    group: root
+    force: false
+
 - name: Enable and start WireGuard
   ansible.builtin.systemd:
     name: wg-quick@wg0

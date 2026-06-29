@@ -5,41 +5,69 @@
 - name: VPS — WireGuard server
   hosts: vps
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - wireguard-server
 
 - name: VPS — HAProxy ingress
   hosts: vps
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - haproxy
 
 - name: VPS — nftables blocklist + banagent
   hosts: vps
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - vps-blocklist
 
 - name: Edge — Caddy reverse proxy
   hosts: edge
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - caddy
 
 - name: Edge — fail2ban scanner detection
   hosts: edge
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - fail2ban
 
 - name: Edge — Promtail log shipping
   hosts: edge
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - promtail
 
 - name: Monitoring VM — observability stack
   hosts: monitoring
   become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
   roles:
     - monitoring

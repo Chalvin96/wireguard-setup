@@ -10,15 +10,21 @@
     state: present
     update_cache: true
 
+- name: Create apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
 - name: Download Caddy GPG key
   ansible.builtin.get_url:
     url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
-    dest: /tmp/caddy-gpg.key
+    dest: /etc/apt/keyrings/caddy-stable.key
     mode: "0644"
 
 - name: Dearmor Caddy GPG key
   ansible.builtin.command:
-    cmd: gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /tmp/caddy-gpg.key
+    cmd: gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/keyrings/caddy-stable.key
     creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 
 - name: Add Caddy apt repository

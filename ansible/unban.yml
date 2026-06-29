@@ -1,0 +1,14 @@
+---
+- name: Manually remove IP from VPS nftables blocklist
+  hosts: vps
+  become: true
+  vars_prompt:
+    - name: ban_ip
+      prompt: "IP address to unban"
+      private: false
+  tasks:
+    - name: Remove IP from blocklist
+      ansible.builtin.command:
+        cmd: nft delete element inet blocklist banned { {{ ban_ip }} }
+      changed_when: true
+      failed_when: false

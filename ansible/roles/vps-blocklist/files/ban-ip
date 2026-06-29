@@ -10,4 +10,4 @@ fi
   || { echo "Error: invalid IP '$IP'"; exit 1; }
 [[ "$TIMEOUT" =~ ^[0-9]+$ ]] \
   || { echo "Error: invalid timeout '$TIMEOUT'"; exit 1; }
-nft add element inet blocklist banned "{ $IP timeout ${TIMEOUT}s }"
+sudo nft add element inet blocklist banned { "$IP" timeout "${TIMEOUT}s" }

@@ -10,6 +10,7 @@ logpath  = /var/log/caddy/access.log
 maxretry = {{ fail2ban_scanner_maxretry }}
 findtime = {{ fail2ban_findtime }}
 bantime  = {{ fail2ban_ban_base }}
+backend  = auto
 action   = vps-ban[vps_ip="{{ vps_public_ip }}"]
 
 [caddy-404]
@@ -19,4 +20,5 @@ logpath  = /var/log/caddy/access.log
 maxretry = {{ fail2ban_flood_maxretry }}
 findtime = {{ fail2ban_findtime }}
 bantime  = {{ fail2ban_ban_base }}
+backend  = auto
 action   = vps-ban[vps_ip="{{ vps_public_ip }}"]

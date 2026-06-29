@@ -1,0 +1,8 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible
+
+add table inet crowdsec-lapi
+add chain inet crowdsec-lapi input { type filter hook input priority -4; policy accept; }
+flush chain inet crowdsec-lapi input
+add rule inet crowdsec-lapi input iif lo accept
+add rule inet crowdsec-lapi input tcp dport {{ crowdsec_lapi_port }} ip saddr != {{ wireguard_server_ip }} drop

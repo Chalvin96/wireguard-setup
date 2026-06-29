@@ -1,11 +1,9 @@
 [Interface]
-PrivateKey = {{ vault_wireguard_server_private_key }}
 Address = {{ wireguard_server_ip }}/24
 ListenPort = {{ wireguard_port }}
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+PrivateKey = {{ vault_wireguard_server_private_key }}
 
-[Peer]
-# Mikrotik
-PublicKey = {{ vault_wireguard_client_public_key }}
-AllowedIPs = {{ wireguard_client_ip }}/32
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE; wg addconf %i /etc/wireguard/wg0-peers.conf
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+{# iptables calls use the iptables-nft compatibility shim on modern Debian/Ubuntu (22.04+) #}
+{# Migration to native nftables PostUp is tracked as a future improvement #}

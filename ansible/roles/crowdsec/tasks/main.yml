@@ -1,0 +1,7 @@
+---
+- name: Install CrowdSec agent
+  ansible.builtin.include_tasks: agent.yml
+  when: "'edge' in group_names"
+
+- name: Install CrowdSec bouncer
+  ansible.builtin.include_tasks: bouncer.yml

@@ -24,6 +24,14 @@
     state: present
     update_cache: true
 
+- name: Create promtail data directory
+  ansible.builtin.file:
+    path: /var/lib/promtail
+    state: directory
+    owner: promtail
+    group: promtail
+    mode: "0750"
+
 - name: Write Promtail config
   ansible.builtin.template:
     src: config.yml.j2

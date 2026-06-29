@@ -1,0 +1,21 @@
+---
+- name: Restart crowdsec
+  ansible.builtin.systemd:
+    name: crowdsec
+    state: restarted
+
+- name: Restart crowdsec-firewall-bouncer
+  ansible.builtin.systemd:
+    name: crowdsec-firewall-bouncer
+    state: restarted
+
+- name: Reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
+
+- name: Start blocklist-import
+  community.docker.docker_compose_v2:
+    project_src: /opt/crowdsec-blocklist-import
+    state: present
+    recreate: always

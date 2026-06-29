@@ -5,61 +5,15 @@
     state: present
     update_cache: true
 
-- name: Ensure /root/.ssh exists
+- name: Remove legacy caddy jail.d file if present
   ansible.builtin.file:
-    path: /root/.ssh
-    state: directory
-    mode: "0700"
-    owner: root
-    group: root
+    path: /etc/fail2ban/jail.d/caddy.conf
+    state: absent
 
-- name: Deploy vps_ban SSH private key
-  ansible.builtin.copy:
-    content: "{{ vault_vps_ban_ssh_private_key }}"
-    dest: /root/.ssh/vps_ban
-    mode: "0600"
-    owner: root
-    group: root
-  no_log: true
-
-- name: Scan VPS SSH host key
-  ansible.builtin.command:
-    cmd: "ssh-keyscan -t ed25519 {{ vps_public_ip }}"
-  register: fail2ban_vps_hostkey
-  changed_when: false
-
-- name: Set known_hosts for VPS (prevent MITM)
-  ansible.builtin.known_hosts:
-    name: "{{ vps_public_ip }}"
-    key: "{{ fail2ban_vps_hostkey.stdout }}"
-    state: present
-    path: /root/.ssh/known_hosts
-
-- name: Deploy caddy-scanner filter
-  ansible.builtin.copy:
-    src: filter.d/caddy-scanner.conf
-    dest: /etc/fail2ban/filter.d/caddy-scanner.conf
-    mode: "0644"
-  notify: Restart fail2ban
-
-- name: Deploy caddy-404 filter
-  ansible.builtin.copy:
-    src: filter.d/caddy-404.conf
-    dest: /etc/fail2ban/filter.d/caddy-404.conf
-    mode: "0644"
-  notify: Restart fail2ban
-
-- name: Deploy vps-ban action
-  ansible.builtin.copy:
-    src: action.d/vps-ban.conf
-    dest: /etc/fail2ban/action.d/vps-ban.conf
-    mode: "0644"
-  notify: Restart fail2ban
-
-- name: Deploy caddy jail config
+- name: Deploy jail config
   ansible.builtin.template:
-    src: jail.d/caddy.conf.j2
-    dest: /etc/fail2ban/jail.d/caddy.conf
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
     mode: "0644"
   notify: Restart fail2ban
 

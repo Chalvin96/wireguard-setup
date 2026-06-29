@@ -1,7 +1,7 @@
 # Managed by Ansible — service blocks go in /etc/caddy/conf.d/*.caddy
 {
     # Admin API bound to LAN IP only — Prometheus scrapes /metrics here
-    admin {{ minipc_lan_ip }}:2019
+    admin {{ edge_ip }}:2019
     metrics
 
     servers {

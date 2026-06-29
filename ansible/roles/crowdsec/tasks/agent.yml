@@ -1,0 +1,185 @@
+---
+- name: Add CrowdSec GPG key
+  ansible.builtin.get_url:
+    url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
+    dest: /etc/apt/keyrings/crowdsec.asc
+    mode: "0644"
+
+- name: Add CrowdSec apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/ubuntu/ jammy main"
+    filename: crowdsec
+    state: present
+
+- name: Install CrowdSec
+  ansible.builtin.apt:
+    name: crowdsec
+    state: present
+    update_cache: true
+
+- name: Configure CrowdSec LAPI to listen on WireGuard IP
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/crowdsec/config.yaml
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Restart crowdsec
+
+- name: Configure CrowdSec log acquisition
+  ansible.builtin.template:
+    src: acquis.yaml.j2
+    dest: /etc/crowdsec/acquis.yaml
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Restart crowdsec
+
+- name: Update CrowdSec Hub
+  ansible.builtin.command:
+    cmd: cscli hub update
+  changed_when: false
+
+- name: Install CrowdSec Hub collections
+  ansible.builtin.command:
+    cmd: "cscli collections install {{ item }}"
+  loop: "{{ crowdsec_hub_collections }}"
+  register: crowdsec_collection_install
+  changed_when: "'already installed' not in crowdsec_collection_install.stdout"
+  notify: Restart crowdsec
+
+- name: Check if vps-bouncer is already registered
+  ansible.builtin.command:
+    cmd: cscli bouncers list -o json
+  register: crowdsec_bouncers
+  changed_when: false
+
+- name: Register vps-bouncer with pre-defined key
+  ansible.builtin.command:
+    cmd: "cscli bouncers add vps-bouncer --key {{ vault_crowdsec_vps_bouncer_key }}"
+  when: "'vps-bouncer' not in crowdsec_bouncers.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Register edge-bouncer with pre-defined key
+  ansible.builtin.command:
+    cmd: "cscli bouncers add edge-bouncer --key {{ vault_crowdsec_edge_bouncer_key }}"
+  when: "'edge-bouncer' not in crowdsec_bouncers.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Restrict CrowdSec LAPI to VPS WireGuard IP
+  ansible.builtin.template:
+    src: crowdsec-lapi.nft.j2
+    dest: /etc/nftables.d/crowdsec-lapi.nft
+    mode: "0644"
+
+- name: Include crowdsec-lapi in nftables.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/crowdsec-lapi.nft"'
+    state: present
+
+- name: Apply LAPI nftables rule before starting CrowdSec
+  ansible.builtin.command:
+    cmd: nft -f /etc/nftables.d/crowdsec-lapi.nft
+  changed_when: false
+
+- name: Enable and start CrowdSec
+  ansible.builtin.systemd:
+    name: crowdsec
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install Docker dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Ensure apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Determine dpkg architecture
+  ansible.builtin.command: dpkg --print-architecture
+  register: crowdsec_dpkg_arch
+  changed_when: false
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ crowdsec_dpkg_arch.stdout }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker CE for blocklist-import
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Enable Docker service
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create crowdsec-blocklist-import directory
+  ansible.builtin.file:
+    path: /opt/crowdsec-blocklist-import
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+
+- name: Check if blocklist-import machine is registered
+  ansible.builtin.command:
+    cmd: cscli machines list -o json
+  register: crowdsec_machines
+  changed_when: false
+
+- name: Register blocklist-import machine
+  ansible.builtin.command:
+    cmd: >-
+      cscli machines add blocklist-import
+      --password "{{ vault_crowdsec_machine_password }}"
+      --url "http://127.0.0.1:{{ crowdsec_lapi_port }}"
+  when: "'blocklist-import' not in crowdsec_machines.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Deploy blocklist-import Docker Compose
+  ansible.builtin.template:
+    src: blocklist-import-compose.yml.j2
+    dest: /opt/crowdsec-blocklist-import/docker-compose.yml
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+  notify: Start blocklist-import
+
+- name: Start blocklist-import container
+  community.docker.docker_compose_v2:
+    project_src: /opt/crowdsec-blocklist-import
+    state: present

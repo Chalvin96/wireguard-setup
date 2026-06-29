@@ -1,0 +1,22 @@
+# Copy to vault.yml and encrypt with: ansible-vault encrypt vault.yml
+# ── WireGuard ──────────────────────────────────────────────────────────────────
+vault_wireguard_server_private_key: "changeme-generate-with-wg-genkey"
+vault_wireguard_server_public_key: "changeme-generate-with-wg-pubkey"  # server's public key (distributed to clients)
+
+# ── fail2ban / vps-blocklist ───────────────────────────────────────────────────
+vault_vps_ban_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  changeme
+  -----END OPENSSH PRIVATE KEY-----
+vault_vps_ban_ssh_public_key: "changeme-ssh-ed25519 AAAA... fail2ban-ban-ip"  # public key written to VPS authorized_keys
+
+# ── Monitoring (Grafana) ───────────────────────────────────────────────────────
+vault_grafana_admin_user: "changeme-admin-username"
+vault_grafana_admin_password: "changeme-strong-password"
+vault_grafana_discord_webhook: "https://discord.com/api/webhooks/changeme"
+
+# ── CrowdSec ───────────────────────────────────────────────────────────────────
+# Generate with: cscli bouncers add vps-bouncer --dry-run (or choose your own)
+vault_crowdsec_vps_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
+vault_crowdsec_edge_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
+vault_crowdsec_machine_password: "changeme-strong-password-for-blocklist-import-machine"

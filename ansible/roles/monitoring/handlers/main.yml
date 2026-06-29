@@ -1,4 +1,9 @@
 ---
+# Note: Grafana supports hot-reload of dashboards/datasources via
+# POST /api/admin/provisioning/dashboards/reload (and /datasources/reload).
+# Full stack restart is used here for simplicity; split into a separate
+# Grafana-only handler using ansible.builtin.uri if restart latency becomes
+# a concern in production.
 - name: Restart monitoring stack
   community.docker.docker_compose_v2:
     project_src: /opt/monitoring

@@ -7,7 +7,7 @@ services:
       - ./loki-config.yml:/etc/loki/local-config.yaml:ro
       - ./loki-data:/loki
     ports:
-      - "{{ loki_port }}:3100"
+      - "{{ monitoring_ip }}:{{ loki_port }}:3100"
     command: -config.file=/etc/loki/local-config.yaml
 
   prometheus:
@@ -19,7 +19,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-data:/prometheus
     ports:
-      - "{{ prometheus_port }}:9090"
+      - "{{ monitoring_ip }}:{{ prometheus_port }}:9090"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=14d
@@ -36,7 +36,7 @@ services:
       - ./grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "{{ grafana_port }}:3000"
+      - "{{ monitoring_ip }}:{{ grafana_port }}:3000"
     depends_on:
       - loki
       - prometheus

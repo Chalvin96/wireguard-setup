@@ -1,0 +1,14 @@
+# Managed by Ansible
+[DEFAULT]
+bantime.increment = true
+bantime.multipliers = 1 5 30 60 300
+bantime  = {{ fail2ban_ban_base }}
+findtime = {{ fail2ban_findtime }}
+backend  = auto
+
+[sshd]
+enabled   = true
+port      = ssh
+logpath   = %(sshd_log)s
+maxretry  = 3
+banaction = nftables[type=allports]

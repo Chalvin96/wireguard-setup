@@ -1,28 +1,26 @@
 # Homelab Security & Observability Stack — Design Spec
 
-**Date:** 2026-06-28
+**Date:** 2026-06-28  
+**Updated:** 2026-06-29 (reflects final implementation — CrowdSec replaces fail2ban web detection)  
 **Project type:** DevOps portfolio
 
 ---
 
 ## Overview
 
-Replace the CrowdSec/Suricata WAF layer with a lighter, more DevOps-idiomatic stack:
-fail2ban reads Caddy's access logs, detects scanners, and enforces bans on the VPS via a
-restricted SSH action. A separate monitoring VM runs Loki, Prometheus, and Grafana for
-full observability over logs and metrics.
+Replace a collection of shell scripts with idempotent Ansible roles that provision three nodes: a VPS for public ingress and ban enforcement, a Mini PC as the edge proxy and security detection engine, and a Monitoring VM for full observability. The security layer uses CrowdSec for web threat detection with proactive blocklist feeds, plus fail2ban for SSH brute-force protection on all nodes.
 
 ---
 
 ## Node Inventory
 
-| Node | Role | Existing software | New software |
-|---|---|---|---|
-| VPS ($5) | Public ingress, ban enforcement | HAProxy, WireGuard server, ufw | nftables blocklist |
-| Mini PC | Edge proxy, DNS, detection, log shipping | Caddy, AdGuard | fail2ban, Promtail |
-| Monitoring VM | Observability | — | Loki, Prometheus, Grafana |
+| Node | Role | Software |
+|------|------|---------|
+| VPS ($5/mo) | Public ingress, ban enforcement | HAProxy, WireGuard server, nftables, CrowdSec bouncer, fail2ban |
+| Mini PC | Edge proxy, detection, log shipping | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import (Docker), fail2ban, Promtail |
+| Monitoring VM | Observability | Loki, Prometheus, Grafana (Docker Compose) |
 
-The mini PC is low-watt and already loaded. All heavy observability workloads go on the VM.
+The Mini PC is low-watt and already loaded. All heavy observability workloads go on the VM.
 
 ---
 
@@ -34,13 +32,13 @@ Internet
   ▼
 VPS — HAProxy (:80/:443, TCP mode, send-proxy-v2)
   │         │
-  │    nftables blocklist  ← banned IPs dropped here, never reach tunnel
+  │    nftables: CrowdSec bouncer + fail2ban SSH bans
+  │         │
+  ▼
+WireGuard tunnel (10.8.0.0/24)
   │
   ▼
-WireGuard tunnel
-  │
-  ▼
-Mikrotik
+Mikrotik (manual — RouterOS has no Ansible support)
   │
   ▼
 Mini PC — Caddy
@@ -48,83 +46,68 @@ Mini PC — Caddy
             ├── TLS termination
             ├── access log → /var/log/caddy/access.log (JSON)
             └── reverse proxy → backend services
+
+Mini PC — CrowdSec LAPI
+            ├── reads Caddy access log
+            ├── Hub scenarios: caddy, base-http-scenarios, http-cve
+            ├── blocklist-import: 13 proactive threat feeds (daily, 24h TTL)
+            └── pushes decisions to both bouncers
 ```
 
 ---
 
 ## Security Automation
 
-### Detection — fail2ban on Mini PC
+### Detection — CrowdSec on Mini PC
 
-fail2ban reads Caddy's JSON access log. Two filters:
+CrowdSec is the primary web threat detection layer. It runs as an agent + LAPI on the Mini PC, reads Caddy's JSON access log, and applies Hub scenarios maintained by the CrowdSec community:
 
-**Filter 1 — scanner paths**
-Triggers on requests to known scan targets: `/.env`, `/wp-admin`, `/wp-login.php`,
-`/xmlrpc.php`, `/.git/`, `/phpmyadmin`, `/admin`, `/shell`, etc.
-Threshold: 3 hits within 60 seconds from the same IP.
+| Collection | Detects |
+|------------|---------|
+| `crowdsecurity/caddy` | Caddy-specific patterns |
+| `crowdsecurity/base-http-scenarios` | Generic scanner paths, 404 floods, UA enumeration |
+| `crowdsecurity/http-cve` | Known CVE probes (Log4Shell, Spring4Shell, etc.) |
 
-**Filter 2 — 404 flood**
-Triggers on excessive 404 responses: 20 within 60 seconds from the same IP.
-Catches generic path enumeration tools (dirb, gobuster, ffuf). Higher threshold than
-scanner paths to avoid false positives from legitimate users hitting broken links.
+Scenarios update automatically via `cscli hub update` on each Ansible run — no manual maintenance.
 
-**Incremental ban durations (bantime.increment):**
+**blocklist-import** adds proactive blocking on top of reactive detection. A Docker container on the Mini PC imports 13 threat feeds daily and pushes decisions with 24-hour TTL into the LAPI:
+
+- Spamhaus DROP + eDROP, Firehol Level 1 + 2
+- Emerging Threats, DShield, CIARMY, Talos
+- GreenSnow, StopForumSpam, Tor exit nodes
+- CrowdSec community blocklist (ipsum)
+
+### Detection — fail2ban on both nodes (SSH only)
+
+fail2ban runs on both the VPS and the Mini PC for SSH brute-force protection. It bans via `nftables[type=allports]` with incremental durations:
 
 | Offence | Duration |
-|---|---|
+|---------|----------|
 | 1st | 5 minutes |
 | 2nd | 25 minutes |
 | 3rd | 2.5 hours |
 | 4th | 5 hours |
 | 5th+ | 25 hours |
 
-### Enforcement — nftables on VPS
+fail2ban and CrowdSec use separate nftables tables — no conflict. fail2ban handles SSH (seconds-fast reaction time); CrowdSec handles web threats (richer detection, proactive blocklists).
 
-**ufw interaction:** ufw manages its own nftables rules on Ubuntu. To avoid conflicts,
-the `vps-blocklist` Ansible role disables and stops ufw (`systemctl disable --now ufw`)
-before writing the blocklist table. HAProxy is already handling ingress; ufw is not needed.
+### Enforcement — nftables bouncers
 
-The blocklist is declared in `/etc/nftables.d/blocklist.nft` and loaded via
-`nft -f` — idempotent because the file begins with `flush table inet filter` scoped
-to this table only. The `nftables` systemd service loads it on boot.
+**Edge bouncer (Mini PC):** Queries local LAPI at `127.0.0.1:8080`. Drops banned IPs before they reach Caddy.
 
-```
-# /etc/nftables.d/blocklist.nft
-table inet filter {
-    set blocklist {
-        type ipv4_addr
-        flags timeout
-    }
-    chain input {
-        type filter hook input priority 0
-        ip saddr @blocklist drop
-    }
-}
-```
+**VPS bouncer:** Queries edge LAPI at `10.8.0.2:8080` over the WireGuard tunnel. Drops banned IPs at the public ingress before they consume tunnel bandwidth.
 
-Banned IPs are inserted with a TTL matching the fail2ban bantime.
-nftables auto-removes expired entries — no unban action needed.
+**LAPI security model:**
+- LAPI binds to `0.0.0.0:8080`
+- nftables chain `crowdsec-lapi` (priority -4) restricts access:
+  - `iif lo accept` — allows edge components (bouncer, blocklist-import, cscli) via loopback
+  - `ip saddr != 10.8.0.1 drop` — allows only VPS over WireGuard tunnel; drops everything else
+- nftables rule is applied *before* CrowdSec starts (no security window)
+- The chain uses `flush chain` (not `flush table`) to preserve TTL-tracked ban sets across re-runs
 
-### SSH Action — Least-Privilege Design
+### Emergency manual ban
 
-fail2ban on the mini PC SSHes to the VPS to insert the IP. The connection is locked down:
-
-**On VPS:**
-- Dedicated `banagent` system user, no login shell.
-- Wrapper script `/usr/local/bin/ban-ip` validates IP and timeout format (regex) before
-  calling nft. Runs via sudoers with `NOPASSWD` for that one command only.
-- SSH `authorized_keys` uses `command=` forced command so the key can only trigger
-  the wrapper. Flags: `no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding`.
-
-**On Mini PC:**
-- Dedicated key at `/root/.ssh/vps_ban` (ed25519, no passphrase).
-- `StrictHostKeyChecking=yes` in the SSH action to prevent MITM.
-
-fail2ban action:
-```
-actionban   = ssh -i /root/.ssh/vps_ban banagent@<vps_ip> "<ip> %(bantime)s"
-actionunban =    # empty — nftables TTL handles expiry
-```
+`ban.yml` and `unban.yml` playbooks provide out-of-band enforcement via nftables. Input is validated with an IPv4 regex before being passed to `nft`.
 
 ---
 
@@ -136,270 +119,157 @@ actionunban =    # empty — nftables TTL handles expiry
 Mini PC: Promtail
   ├── tails /var/log/caddy/access.log   (label: job=caddy)
   ├── tails /var/log/fail2ban.log       (label: job=fail2ban)
-  └── ships both to Loki on Monitoring VM (port 3100)
+  └── ships both to Loki on Monitoring VM (port 3100, bound to monitoring_ip)
 
 Monitoring VM: Loki
-  └── stores and indexes log streams
+  └── stores and indexes log streams (14-day retention)
 ```
-
-Promtail is the only observability component on the mini PC. Footprint: ~50 MB RAM.
-Both log files are tailed so the Grafana ban timeline panel has a data source
-(`job=fail2ban` stream in Loki).
 
 ### Metrics pipeline
 
 ```
-Mini PC: Caddy metrics endpoint (<lan_ip>:2019/metrics, Prometheus format)
+Mini PC: Caddy admin endpoint (edge_ip:2019/metrics, Prometheus format)
+  └── nftables rule: port 2019 allowed only from monitoring_ip
 
 Monitoring VM: Prometheus
-  └── scrapes Caddy metrics every 15s over LAN
+  ├── scrapes Caddy metrics every 15s over LAN
+  └── scrapes Node Exporter (localhost:9100) for host metrics
 ```
 
-Caddy exposes request count, latency histograms, and active connections out of the box
-with `metrics` in the global Caddyfile block. No extra exporter needed.
+Caddy exposes request count, latency histograms, and active connections out of the box via the `metrics` global block — no extra exporter needed.
 
-The metrics endpoint must bind to the mini PC's LAN IP, not localhost, so the monitoring
-VM can reach it. The `caddy` Ansible role sets `admin {{ minipc_lan_ip }}:2019` in the
-global block (variable from `config.yml`). The `caddy` role also writes a nftables rule
-on the mini PC that allows port 2019 only from `{{ monitor_vm_lan_ip }}` and drops all
-other access. Both `minipc_lan_ip` and `monitor_vm_lan_ip` are config variables.
+### Docker port binding
 
-### Metrics pipeline — Node Exporter
+All monitoring Docker ports bind to `monitoring_ip` (the monitoring VM's LAN IP), not `0.0.0.0`. This prevents Loki, Prometheus, and Grafana from being reachable from outside the LAN.
 
-Node Exporter is installed on the monitoring VM as a systemd service via
-`apt install prometheus-node-exporter`. Prometheus scrapes it on `localhost:9100`
-alongside Caddy metrics. This adds host-level metrics (CPU, memory, disk) to Grafana
-without any Docker complexity.
-
-### Retention
-
-Both Loki and Prometheus retain data for **14 days**. At homelab traffic levels this
-fits well within a 20GB VM disk. Configured via:
-- Loki: `retention_period: 336h` in the Loki config
-- Prometheus: `--storage.tsdb.retention.time=14d` flag
-
-### Grafana dashboards (Monitoring VM)
-
-Five panels minimum:
+### Grafana dashboards
 
 | Panel | Source | Shows |
-|---|---|---|
+|-------|--------|-------|
 | Request rate | Prometheus | Requests/sec over time |
 | 4xx/5xx rate | Prometheus | Error rate, spike detection |
-| Top requested paths | Loki | Most common URIs (including scan paths) |
+| Top requested paths | Loki | Most common URIs |
 | Ban timeline | Loki (fail2ban log) | When bans fired, which IPs |
-| Disk usage | Prometheus (Node Exporter) | VM disk % used, alert threshold |
+| Disk usage | Prometheus (Node Exporter) | VM disk % with alert threshold |
 
 ### Grafana alerting
 
-A single alert rule watches the monitoring VM disk usage. When disk exceeds 80%,
-Grafana fires to a Discord webhook (contact point). Webhook URL stored in vault as
-`vault_grafana_discord_webhook` and injected into Grafana's provisioned alerting config
-by the `monitoring` Ansible role.
+A single alert rule watches the monitoring VM disk usage. When disk exceeds `grafana_disk_alert_threshold` (default 80%), Grafana fires to a Discord webhook. Webhook URL stored in vault as `vault_grafana_discord_webhook`.
+
+### Retention
+
+Both Loki and Prometheus retain data for **14 days** — fits well within a 20GB VM at homelab traffic levels.
 
 ---
 
 ## Automation — Ansible
 
-All node configuration is managed by Ansible from the **operator's laptop** over LAN
-(mini PC and monitoring VM) and public IP (VPS). The existing shell scripts are replaced
-by Ansible roles. Mikrotik remains a manual step (RouterOS does not support Ansible)
-and is documented in `docs/mikrotik-wireguard-setup.md`.
-
 ### Access model
 
-A dedicated `deploy` user is created via a **bootstrap playbook** (`ansible/bootstrap.yml`)
-that runs once per host as the existing named user (before `deploy` exists). It creates
-the user, copies the operator's SSH public key, and writes the sudoers entry. After
-bootstrap, all subsequent playbooks run as `deploy`.
+A dedicated `deploy` user is created via `ansible/bootstrap.yml` (one-time per host). It creates the user, copies `{{ bootstrap_ssh_pubkey }}` (default `~/.ssh/id_ed25519.pub`, overridable via `-e`), and writes the sudoers entry. All subsequent playbooks run as `deploy` with passwordless sudo.
 
 ```bash
-# One-time per host
+ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
+# Non-default key:
 ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass \
-  --limit vps
+  -e bootstrap_ssh_pubkey=~/.ssh/id_rsa.pub
 ```
-
-`deploy` authenticates via SSH key only (`PasswordAuthentication no`) and has full
-passwordless sudo (`NOPASSWD:ALL`). Security is enforced at the SSH layer — the
-operator's key never leaves their laptop. This mirrors standard CI/CD runner patterns.
 
 ### Repository layout
 
 ```
 ansible/
-  site.yml                        ← top-level playbook, runs all roles
+  site.yml                        ← 3 plays: ingress / edge / monitoring (one fact-gather per host)
+  add-client.yml                  ← interactive: adds WireGuard peer, writes <name>.conf locally
+  bootstrap.yml                   ← one-time: create deploy user + authorized key + sudoers
+  ban.yml / unban.yml             ← manual emergency IP ban/unban with input validation
   inventory/
-    hosts.yml.example             ← committed, placeholder IPs, shows structure
+    hosts.yml.example             ← committed, placeholder IPs
     hosts.yml                     ← gitignored, real IPs
-  group_vars/
-    all/
-      config.yml.example          ← committed, every variable documented with comments
-      config.yml                  ← gitignored, real values (domain, ports, interface names)
-      vault.yml                   ← committed, Ansible Vault encrypted
-                                     contains: wireguard private keys, vps_ban SSH private key
+  group_vars/all/
+    config.yml.example            ← every variable documented with comments
+    config.yml                    ← gitignored, real values
+    vault.yml                     ← Ansible Vault AES-256 (committed encrypted)
+    vault.yml.example             ← full variable reference with changeme placeholders
   roles/
-    wireguard-server/             ← VPS: WireGuard server setup
-    haproxy/                      ← VPS: HAProxy TCP forward + send-proxy-v2
-    vps-blocklist/                ← VPS: nftables blocklist + banagent user + wrapper script
-    caddy/                        ← Mini PC: Caddy install + full Caddyfile template
-    fail2ban/                     ← Mini PC: filters, action, SSH key deployment
-    promtail/                     ← Mini PC: log shipper config
-    monitoring/                   ← Monitoring VM: Docker CE install, Docker Compose v2
-                                     stack (Loki + Prometheus + Grafana), Node Exporter
-                                     systemd service, bind mounts under /opt/monitoring/,
-                                     Grafana provisioning via YAML files (datasources,
-                                     dashboard JSON, Discord alert contact point + rule)
-  bootstrap.yml                   ← one-time per host: create deploy user, copy SSH key,
-                                     write sudoers — runs as existing named user
-  add-client.yml                  ← standalone playbook, vars_prompt for client name
-  .vault_password                 ← gitignored, used by --vault-password-file
-  .gitignore
+    wireguard-server/             ← VPS: WireGuard server, wg0.conf (interface only),
+                                     wg0-peers.conf (loaded via PostUp wg addconf)
+    haproxy/                      ← VPS: TCP forward + PROXY Protocol v2 + rate limit
+    vps-blocklist/                ← VPS: nftables blocklist + emergency ban-ip tool (banagent)
+    fail2ban/                     ← both nodes: SSH-only, nftables backend, incremental banning
+    crowdsec/                     ← edge: CrowdSec agent + LAPI + blocklist-import Docker
+                                     both: nftables bouncer (edge via loopback, VPS via WireGuard)
+    caddy/                        ← edge: Caddy + metrics + nftables caddy-metrics firewall
+    promtail/                     ← edge: log shipping
+    monitoring/                   ← monitoring VM: Docker CE, Compose stack (Loki + Prometheus
+                                     + Grafana), Node Exporter, Grafana provisioning YAML
 ```
 
-### Inventory groups
+### Secrets (vault.yml)
+
+WireGuard keypairs are pre-generated on the operator's machine before the first run (`wg genkey | tee private.key | wg pubkey > public.key`), then stored in the vault. CrowdSec bouncer keys are chosen by the operator and pre-registered in the LAPI via `cscli bouncers add` during the crowdsec agent play.
 
 ```yaml
-# inventory/hosts.yml.example
-all:
-  children:
-    vps:
-      hosts:
-        vps-01:
-          ansible_host: 1.2.3.4        # replace with real VPS IP
-    edge:
-      hosts:
-        minipc:
-          ansible_host: 192.168.1.x    # replace with mini PC LAN IP
-    monitoring:
-      hosts:
-        monitor-vm:
-          ansible_host: 192.168.1.x    # replace with monitoring VM LAN IP
-```
-
-### Configuration variables (config.yml.example)
-
-```yaml
-# Network
-wireguard_server_ip: "10.8.0.1"
-wireguard_client_ip: "10.8.0.2"
-wireguard_port: 51820
-vps_public_ip: "1.2.3.4"         # public IP of VPS
-minipc_lan_ip: "192.168.1.x"     # LAN IP of mini PC (for Caddy admin bind + firewall)
-monitor_vm_lan_ip: "192.168.1.x" # LAN IP of monitoring VM (for firewall allowlist)
-
-# Caddy
-caddy_domain: "example.com"
-caddy_backend_port: 8080
-
-# fail2ban
-fail2ban_ban_base: 300            # 5 minutes in seconds
-fail2ban_findtime: 60
-fail2ban_scanner_maxretry: 3
-fail2ban_flood_maxretry: 20
-
-# Observability
-loki_port: 3100
-prometheus_port: 9090
-grafana_port: 3000
-node_exporter_port: 9100
-grafana_disk_alert_threshold: 80  # percent
-```
-
-### Secrets (vault.yml — Ansible Vault encrypted)
-
-WireGuard keypairs are **pre-generated** on the operator's machine before the first run
-(`wg genkey | tee private.key | wg pubkey > public.key`), then stored in the vault.
-The roles consume them from vault variables and write keys to the correct paths on each
-host. This avoids a chicken-and-egg problem where the role would need to generate keys
-and then somehow populate the vault.
-
-```yaml
-# ansible-vault edit group_vars/all/vault.yml
 vault_wireguard_server_private_key: "<wg private key>"
-vault_wireguard_server_public_key: "<wg public key>"
-vault_wireguard_client_private_key: "<wg private key>"
-vault_wireguard_client_public_key: "<wg public key>"
+vault_wireguard_server_public_key:  "<wg public key>"
 vault_vps_ban_ssh_private_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   ...
   -----END OPENSSH PRIVATE KEY-----
-vault_vps_ban_ssh_public_key: "ssh-ed25519 AAAA..."
-vault_grafana_admin_user: "admin"
-vault_grafana_admin_password: "<strong password>"
-vault_grafana_discord_webhook: "https://discord.com/api/webhooks/..."
+vault_vps_ban_ssh_public_key:         "ssh-ed25519 AAAA..."
+vault_grafana_admin_user:             "admin"
+vault_grafana_admin_password:         "<strong password>"
+vault_grafana_discord_webhook:        "https://discord.com/api/webhooks/..."
+vault_crowdsec_vps_bouncer_key:       "<random string>"
+vault_crowdsec_edge_bouncer_key:      "<random string>"
+vault_crowdsec_machine_password:      "<random string>"
 ```
 
 ### Role execution order
 
-`site.yml` runs roles in dependency order:
+`site.yml` runs in dependency order within each play:
 
 ```
-1. bootstrap.yml      (one-time, separate playbook)
-2. VPS:   wireguard-server → haproxy → vps-blocklist
-3. Edge:  caddy → fail2ban → promtail
-4. VM:    monitoring
+1. bootstrap.yml     (one-time, separate playbook)
+2. VPS play:   wireguard-server → haproxy → vps-blocklist → fail2ban → crowdsec
+3. Edge play:  caddy → fail2ban → promtail → crowdsec
+4. VM play:    monitoring
 ```
 
-`caddy` must run before `fail2ban` and `promtail` (log files must exist).
-`monitoring` role opens port 3100 (Loki) on the monitoring VM's firewall, restricted
-to `{{ minipc_lan_ip }}` only — Promtail is the only allowed sender.
-
-### Deploy workflow
-
-```bash
-# First time — bootstrap deploy user on each host
-ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
-
-# Fill in config
-cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
-cp ansible/group_vars/all/config.yml.example ansible/group_vars/all/config.yml
-# edit both files, then add secrets:
-ansible-vault edit ansible/group_vars/all/vault.yml
-
-# Deploy everything
-ansible-playbook ansible/site.yml --vault-password-file .vault_password
-
-# Deploy one node only
-ansible-playbook ansible/site.yml --limit vps --vault-password-file .vault_password
-```
+`caddy` must run before `crowdsec` on the edge (log files must exist for acquisition).
 
 ### Adding WireGuard clients
 
-`add-client.yml` is a standalone Ansible playbook (not part of `site.yml`). It uses
-`vars_prompt` to ask for the client name interactively, delegates to the VPS to generate
-the keypair and add the peer, then prints the client config via `debug`. Zero-downtime
-via `wg syncconf`.
+`add-client.yml` generates a keypair on the VPS, appends a peer block to `wg0-peers.conf`, applies it live via `wg addconf` (zero downtime), and writes the client `.conf` file to the operator's local directory with mode `0600`. The private key is never printed to stdout.
 
 ```bash
 ansible-playbook ansible/add-client.yml --vault-password-file .vault_password
 # Enter client name: phone
+# → writes ./phone.conf
 ```
-
-### What stays as documentation (not automated)
-
-- Mikrotik WireGuard config — `docs/mikrotik-wireguard-setup.md`
 
 ---
 
 ## Out of Scope
 
-- IPv6 banning (nftables set is `ipv4_addr` only for now)
+- IPv6 banning (nftables set is `ipv4_addr` only)
 - TLS inspection / HTTPS payload scanning
-- Alerting beyond disk usage (request rate spikes, ban rate anomalies) — add later
-- Suricata / network-layer IDS
-- Kubernetes or container orchestration on the mini PC
+- Alerting beyond disk usage (add later)
+- Kubernetes or container orchestration on the Mini PC
+- Mikrotik automation (RouterOS has no Ansible support — `docs/mikrotik-wireguard-setup.md`)
 
 ---
 
 ## DevOps Skills Demonstrated
 
 | Skill area | Evidence |
-|---|---|
+|------------|----------|
 | Networking | WireGuard, HAProxy TCP mode, PROXY Protocol v2, nftables |
-| Security ops | fail2ban incremental banning, least-privilege SSH, automated enforcement |
-| Configuration management | Ansible roles, inventory groups, idempotent playbooks |
-| Secrets management | Ansible Vault, gitignored files, `.example` templates |
+| Security | CrowdSec collaborative detection, proactive blocklist feeds, fail2ban SSH banning, least-privilege SSH, nftables TTL bans |
+| Threat intelligence | 13-feed blocklist-import, CrowdSec Hub auto-updating scenarios |
+| Configuration management | Ansible roles, inventory groups, idempotent playbooks, ansible-lint production profile |
+| Secrets management | Ansible Vault AES-256, gitignored files, `.example` templates |
 | Log aggregation | Promtail → Loki multi-node pipeline |
-| Metrics | Prometheus scrape, Caddy native metrics |
-| Observability | Grafana dashboards across logs + metrics |
+| Metrics | Prometheus scrape, Caddy native metrics, Node Exporter |
+| Observability | Grafana dashboards across logs + metrics, Discord alerting |
 | Architecture | 3-node separation of concerns (ingress / edge / observability) |

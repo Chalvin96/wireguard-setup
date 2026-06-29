@@ -2,7 +2,7 @@
 # Add a WireGuard peer to the VPS — run standalone, not part of site.yml.
 # ansible-playbook ansible/add-client.yml --vault-password-file .vault_password
 - name: Add WireGuard client
-  hosts: vps
+  hosts: ingress
   become: true
   vars_prompt:
     - name: client_name
@@ -20,14 +20,14 @@
   tasks:
     - name: Check client does not already exist
       ansible.builtin.command:
-        cmd: 'grep -c "# Client: {{ client_name }}" /etc/wireguard/wg0.conf'
+        cmd: 'grep -c "# Client: {{ client_name }}" /etc/wireguard/wg0-peers.conf'
       register: add_client_existing
       changed_when: false
       failed_when: add_client_existing.rc not in [0, 1]
 
     - name: Abort if client already exists
       ansible.builtin.fail:
-        msg: "Client '{{ client_name }}' already exists in wg0.conf"
+        msg: "Client '{{ client_name }}' already exists in wg0-peers.conf"
       when: add_client_existing.stdout | int > 0
 
     - name: Generate WireGuard private key
@@ -51,7 +51,7 @@
 
     - name: Read current AllowedIPs
       ansible.builtin.command:
-        cmd: grep -oP '10\.8\.0\.\K\d+' /etc/wireguard/wg0.conf
+        cmd: grep -oP '10\.8\.0\.\K\d+' /etc/wireguard/wg0-peers.conf
       register: add_client_used_octets
       changed_when: false
       failed_when: add_client_used_octets.rc not in [0, 1]
@@ -65,9 +65,9 @@
             | first
           }}
 
-    - name: Add peer block to wg0.conf
+    - name: Add peer block to wg0-peers.conf
       ansible.builtin.blockinfile:
-        path: /etc/wireguard/wg0.conf
+        path: /etc/wireguard/wg0-peers.conf
         create: true
         block: |
           [Peer]
@@ -78,21 +78,13 @@
         mode: "0600"
 
     - name: Apply peer without tunnel downtime
-      ansible.builtin.shell: |
-        set -o pipefail
-        wg syncconf wg0 <(wg-quick strip wg0)
-      args:
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: wg addconf wg0 /etc/wireguard/wg0-peers.conf
       changed_when: true
 
-    - name: Print client config
-      ansible.builtin.debug:
-        msg: |
-          ═══════════════════════════════════════════════
-          WireGuard config for: {{ client_name }}
-          Save as {{ client_name }}.conf or scan as QR code
-          ═══════════════════════════════════════════════
-
+    - name: Write client config to local file
+      ansible.builtin.copy:
+        content: |
           [Interface]
           PrivateKey = {{ add_client_privkey.stdout }}
           Address = 10.8.0.{{ add_client_next_octet }}/24
@@ -100,6 +92,15 @@
 
           [Peer]
           PublicKey = {{ vault_wireguard_server_public_key }}
-          Endpoint = {{ vps_public_ip }}:{{ wireguard_port }}
+          Endpoint = {{ ingress_ip }}:{{ wireguard_port }}
           AllowedIPs = 0.0.0.0/0
           PersistentKeepalive = 25
+        dest: "./{{ client_name }}.conf"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Client config saved
+      ansible.builtin.debug:
+        msg: "Client config written to {{ client_name }}.conf — share securely with {{ client_name }}"

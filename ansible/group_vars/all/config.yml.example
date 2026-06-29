@@ -1,15 +1,16 @@
 # ── Network ────────────────────────────────────────────────────────────────────
 wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
-wireguard_client_ip: "10.8.0.2"       # Mikrotik WireGuard tunnel IP
+wireguard_client_ip: "10.8.0.2"       # edge node WireGuard tunnel IP (assigned to wg0 on Mini PC; Mikrotik routes traffic to it)
 wireguard_port: 51820
-vps_public_ip: "1.2.3.4"             # VPS public internet IP
+ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 
-minipc_lan_ip: "192.168.1.x"         # mini PC LAN IP (Caddy admin bind + firewall)
-monitor_vm_lan_ip: "192.168.1.x"     # monitoring VM LAN IP (Prometheus scrape source)
+edge_ip: "192.168.1.x"              # edge node LAN IP (Caddy admin bind + firewall)
+monitoring_ip: "192.168.1.x"        # monitoring node LAN IP (Prometheus scrape source)
 
 # ── HAProxy ────────────────────────────────────────────────────────────────────
 haproxy_http_port: 80
 haproxy_https_port: 443
+haproxy_rate_limit: 50               # max new connections per IP per 10s (TCP rate limit)
 
 # ── Caddy ──────────────────────────────────────────────────────────────────────
 caddy_domain: "example.com"           # primary domain (placeholder for user's Caddyfile)
@@ -18,8 +19,6 @@ caddy_backend_port: 8080              # example backend port
 # ── fail2ban ───────────────────────────────────────────────────────────────────
 fail2ban_ban_base: 300                # 5 minutes (seconds)
 fail2ban_findtime: 60
-fail2ban_scanner_maxretry: 3
-fail2ban_flood_maxretry: 20
 
 # ── Observability ──────────────────────────────────────────────────────────────
 loki_port: 3100
@@ -32,3 +31,13 @@ grafana_disk_alert_threshold: 80      # percent
 loki_image: "grafana/loki:3.1.0"
 prometheus_image: "prom/prometheus:v2.53.0"
 grafana_image: "grafana/grafana:11.1.0"
+
+# ── CrowdSec ───────────────────────────────────────────────────────────────────
+crowdsec_lapi_port: 8080
+crowdsec_hub_collections:
+  - crowdsecurity/caddy
+  - crowdsecurity/base-http-scenarios
+  - crowdsecurity/http-cve
+crowdsec_blocklist_image: "ghcr.io/wolffcatskyy/crowdsec-blocklist-import:latest"  # pin to a digest in production
+crowdsec_blocklist_feeds: "ipsum,spamhaus_drop,spamhaus_edrop,blocklistde,firehol_level1,firehol_level2,emerging_threats,dshield,ciarmy,talos,greensnow,stopforumspam,tor_exits"
+crowdsec_blocklist_interval: "86400"

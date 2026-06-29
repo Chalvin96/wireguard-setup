@@ -3,6 +3,7 @@ services:
     image: {{ crowdsec_blocklist_image }}
     container_name: crowdsec-blocklist-import
     restart: unless-stopped
+    network_mode: host
     environment:
       CROWDSEC_URL: "http://127.0.0.1:{{ crowdsec_lapi_port }}"
       CROWDSEC_LOGIN: "blocklist-import"

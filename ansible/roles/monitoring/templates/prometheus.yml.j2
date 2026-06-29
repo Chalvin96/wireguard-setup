@@ -7,7 +7,7 @@ scrape_configs:
   - job_name: caddy
     static_configs:
       - targets:
-          - "{{ minipc_lan_ip }}:2019"
+          - "{{ edge_ip }}:2019"
 
   - job_name: node-exporter
     static_configs:

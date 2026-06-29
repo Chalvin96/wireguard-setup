@@ -11,7 +11,7 @@ maxretry = {{ fail2ban_scanner_maxretry }}
 findtime = {{ fail2ban_findtime }}
 bantime  = {{ fail2ban_ban_base }}
 backend  = auto
-action   = vps-ban[vps_ip="{{ vps_public_ip }}"]
+action   = vps-ban[vps_ip="{{ ingress_ip }}"]
 
 [caddy-404]
 enabled  = true
@@ -21,4 +21,4 @@ maxretry = {{ fail2ban_flood_maxretry }}
 findtime = {{ fail2ban_findtime }}
 bantime  = {{ fail2ban_ban_base }}
 backend  = auto
-action   = vps-ban[vps_ip="{{ vps_public_ip }}"]
+action   = vps-ban[vps_ip="{{ ingress_ip }}"]

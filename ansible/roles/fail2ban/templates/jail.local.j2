@@ -12,19 +12,3 @@ port      = ssh
 logpath   = %(sshd_log)s
 maxretry  = 3
 banaction = nftables[type=allports]
-
-{% if 'edge' in group_names %}
-[caddy-scanner]
-enabled  = true
-filter   = caddy-scanner
-logpath  = /var/log/caddy/access.log
-maxretry = {{ fail2ban_scanner_maxretry }}
-action   = vps-ban[vps_ip="{{ ingress_ip }}"]
-
-[caddy-404]
-enabled  = true
-filter   = caddy-404
-logpath  = /var/log/caddy/access.log
-maxretry = {{ fail2ban_flood_maxretry }}
-action   = vps-ban[vps_ip="{{ ingress_ip }}"]
-{% endif %}

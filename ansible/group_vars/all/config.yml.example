@@ -40,3 +40,5 @@ crowdsec_hub_collections:
   - crowdsecurity/caddy
   - crowdsecurity/base-http-scenarios
   - crowdsecurity/http-cve
+crowdsec_blocklist_feeds: "ipsum,spamhaus_drop,spamhaus_edrop,blocklistde,firehol_level1,firehol_level2,emerging_threats,dshield,ciarmy,talos,greensnow,stopforumspam,tor_exits"
+crowdsec_blocklist_interval: "86400"

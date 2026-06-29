@@ -1,0 +1,12 @@
+services:
+  crowdsec-blocklist-import:
+    image: ghcr.io/wolffcatskyy/crowdsec-blocklist-import:latest
+    container_name: crowdsec-blocklist-import
+    restart: unless-stopped
+    environment:
+      CROWDSEC_URL: "http://{{ wireguard_client_ip }}:{{ crowdsec_lapi_port }}"
+      CROWDSEC_LOGIN: "blocklist-import"
+      CROWDSEC_PASSWORD: "{{ vault_crowdsec_machine_password }}"
+      INTERVAL: "{{ crowdsec_blocklist_interval }}"
+      LISTS: "{{ crowdsec_blocklist_feeds }}"
+    mem_limit: 256m

@@ -2,7 +2,7 @@
 # Full stack deploy — runs in dependency order.
 # Run: ansible-playbook ansible/site.yml --vault-password-file .vault_password
 
-- name: VPS — WireGuard server
+- name: VPS — ingress stack
   hosts: ingress
   become: true
   gather_facts: true
@@ -11,48 +11,12 @@
     - distribution
   roles:
     - wireguard-server
-
-- name: VPS — HAProxy ingress
-  hosts: ingress
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - haproxy
-
-- name: VPS — nftables blocklist + banagent
-  hosts: ingress
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - vps-blocklist
-
-- name: VPS — fail2ban SSH protection
-  hosts: ingress
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - fail2ban
-
-- name: VPS — CrowdSec firewall bouncer
-  hosts: ingress
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - crowdsec
 
-- name: Edge — Caddy reverse proxy
+- name: Edge — reverse proxy + security stack
   hosts: edge
   become: true
   gather_facts: true
@@ -61,36 +25,9 @@
     - distribution
   roles:
     - caddy
-
-- name: Edge — fail2ban scanner detection
-  hosts: edge
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - fail2ban
-
-- name: Edge — CrowdSec agent + bouncer
-  hosts: edge
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
-    - crowdsec
-
-- name: Edge — Promtail log shipping
-  hosts: edge
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
     - promtail
+    - crowdsec
 
 - name: Monitoring VM — observability stack
   hosts: monitoring

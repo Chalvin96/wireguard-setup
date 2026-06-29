@@ -6,6 +6,8 @@
   hosts: all
   gather_facts: false
   become: true
+  vars:
+    bootstrap_ssh_pubkey: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
 
   tasks:
     - name: Create deploy group
@@ -32,7 +34,7 @@
     - name: Add operator SSH public key
       ansible.posix.authorized_key:
         user: deploy
-        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+        key: "{{ bootstrap_ssh_pubkey }}"
         state: present
 
     - name: Configure passwordless sudo

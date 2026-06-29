@@ -68,26 +68,29 @@
   changed_when: true
   no_log: true
 
-- name: Enable and start CrowdSec
-  ansible.builtin.systemd:
-    name: crowdsec
-    enabled: true
-    state: started
-    daemon_reload: true
-
 - name: Restrict CrowdSec LAPI to VPS WireGuard IP
   ansible.builtin.template:
     src: crowdsec-lapi.nft.j2
     dest: /etc/nftables.d/crowdsec-lapi.nft
     mode: "0644"
-  notify: Reload nftables
 
 - name: Include crowdsec-lapi in nftables.conf
   ansible.builtin.lineinfile:
     path: /etc/nftables.conf
     line: 'include "/etc/nftables.d/crowdsec-lapi.nft"'
     state: present
-  notify: Reload nftables
+
+- name: Apply LAPI nftables rule before starting CrowdSec
+  ansible.builtin.command:
+    cmd: nft -f /etc/nftables.d/crowdsec-lapi.nft
+  changed_when: false
+
+- name: Enable and start CrowdSec
+  ansible.builtin.systemd:
+    name: crowdsec
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Install Docker for blocklist-import
   ansible.builtin.apt:
@@ -122,7 +125,7 @@
     cmd: >-
       cscli machines add blocklist-import
       --password "{{ vault_crowdsec_machine_password }}"
-      --url "http://{{ wireguard_client_ip }}:{{ crowdsec_lapi_port }}"
+      --url "http://127.0.0.1:{{ crowdsec_lapi_port }}"
   when: "'blocklist-import' not in crowdsec_machines.stdout"
   changed_when: true
   no_log: true

@@ -31,7 +31,7 @@
     repo: >-
       deb [arch={{ monitoring_dpkg_arch.stdout }}
       signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/ubuntu
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
       {{ ansible_distribution_release }} stable
     filename: docker
     state: present

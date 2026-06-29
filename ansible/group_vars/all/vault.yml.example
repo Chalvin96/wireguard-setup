@@ -1,0 +1,15 @@
+# Copy to vault.yml and encrypt with: ansible-vault encrypt vault.yml
+# ── WireGuard ──────────────────────────────────────────────────────────────────
+vault_wg_server_private_key: "changeme-generate-with-wg-genkey"
+vault_wg_client_public_key: "changeme-generate-with-wg-pubkey"
+
+# ── fail2ban / vps-blocklist ───────────────────────────────────────────────────
+vault_vps_ban_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  changeme
+  -----END OPENSSH PRIVATE KEY-----
+
+# ── CrowdSec ───────────────────────────────────────────────────────────────────
+# Generate with: cscli bouncers add vps-bouncer --dry-run (or choose your own)
+vault_crowdsec_vps_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
+vault_crowdsec_edge_bouncer_key: "changeme-generate-with-cscli-bouncers-add"

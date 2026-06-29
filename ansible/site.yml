@@ -32,6 +32,26 @@
   roles:
     - vps-blocklist
 
+- name: VPS — fail2ban SSH protection
+  hosts: ingress
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - fail2ban
+
+- name: VPS — CrowdSec firewall bouncer
+  hosts: ingress
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - crowdsec
+
 - name: Edge — Caddy reverse proxy
   hosts: edge
   become: true
@@ -51,6 +71,16 @@
     - distribution
   roles:
     - fail2ban
+
+- name: Edge — CrowdSec agent + bouncer
+  hosts: edge
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - crowdsec
 
 - name: Edge — Promtail log shipping
   hosts: edge

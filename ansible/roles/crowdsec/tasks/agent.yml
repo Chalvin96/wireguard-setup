@@ -1,0 +1,90 @@
+---
+- name: Add CrowdSec GPG key
+  ansible.builtin.get_url:
+    url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
+    dest: /etc/apt/keyrings/crowdsec.asc
+    mode: "0644"
+
+- name: Add CrowdSec apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/ubuntu/ jammy main"
+    filename: crowdsec
+    state: present
+
+- name: Install CrowdSec
+  ansible.builtin.apt:
+    name: crowdsec
+    state: present
+    update_cache: true
+
+- name: Configure CrowdSec LAPI to listen on WireGuard IP
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/crowdsec/config.yaml
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Restart crowdsec
+
+- name: Configure CrowdSec log acquisition
+  ansible.builtin.template:
+    src: acquis.yaml.j2
+    dest: /etc/crowdsec/acquis.yaml
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Restart crowdsec
+
+- name: Update CrowdSec Hub
+  ansible.builtin.command:
+    cmd: cscli hub update
+  changed_when: false
+
+- name: Install CrowdSec Hub collections
+  ansible.builtin.command:
+    cmd: "cscli collections install {{ item }}"
+  loop: "{{ crowdsec_hub_collections }}"
+  register: crowdsec_collection_install
+  changed_when: "'already installed' not in crowdsec_collection_install.stdout"
+  notify: Restart crowdsec
+
+- name: Check if vps-bouncer is already registered
+  ansible.builtin.command:
+    cmd: cscli bouncers list -o json
+  register: crowdsec_bouncers
+  changed_when: false
+
+- name: Register vps-bouncer with pre-defined key
+  ansible.builtin.command:
+    cmd: "cscli bouncers add vps-bouncer --key {{ vault_crowdsec_vps_bouncer_key }}"
+  when: "'vps-bouncer' not in crowdsec_bouncers.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Register edge-bouncer with pre-defined key
+  ansible.builtin.command:
+    cmd: "cscli bouncers add edge-bouncer --key {{ vault_crowdsec_edge_bouncer_key }}"
+  when: "'edge-bouncer' not in crowdsec_bouncers.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Enable and start CrowdSec
+  ansible.builtin.systemd:
+    name: crowdsec
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Restrict CrowdSec LAPI to VPS WireGuard IP
+  ansible.builtin.template:
+    src: crowdsec-lapi.nft.j2
+    dest: /etc/nftables.d/crowdsec-lapi.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Include crowdsec-lapi in nftables.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/crowdsec-lapi.nft"'
+    state: present
+  notify: Reload nftables

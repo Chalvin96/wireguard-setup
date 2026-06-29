@@ -33,3 +33,10 @@ grafana_disk_alert_threshold: 80      # percent
 loki_image: "grafana/loki:3.1.0"
 prometheus_image: "prom/prometheus:v2.53.0"
 grafana_image: "grafana/grafana:11.1.0"
+
+# ── CrowdSec ───────────────────────────────────────────────────────────────────
+crowdsec_lapi_port: 8080
+crowdsec_hub_collections:
+  - crowdsecurity/caddy
+  - crowdsecurity/base-http-scenarios
+  - crowdsecurity/http-cve

@@ -1,9 +1,4 @@
 add table inet caddy-metrics
-flush table inet caddy-metrics
-
-table inet caddy-metrics {
-    chain input {
-        type filter hook input priority -5; policy accept;
-        tcp dport 2019 ip saddr != {{ monitoring_ip }} drop
-    }
-}
+add chain inet caddy-metrics input { type filter hook input priority -5; policy accept; }
+flush chain inet caddy-metrics input
+add rule inet caddy-metrics input tcp dport 2019 ip saddr != {{ monitoring_ip }} drop

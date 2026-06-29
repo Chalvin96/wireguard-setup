@@ -7,6 +7,11 @@
       prompt: "IP address to unban"
       private: false
   tasks:
+    - name: Validate IP address
+      ansible.builtin.assert:
+        that: ban_ip | regex_search('^(\d{1,3}\.){3}\d{1,3}$')
+        fail_msg: "Invalid IP address: {{ ban_ip }}"
+
     - name: Remove IP from blocklist
       ansible.builtin.command:
         cmd: nft delete element inet blocklist banned { {{ ban_ip }} }

@@ -19,8 +19,6 @@ caddy_backend_port: 8080              # example backend port
 # ── fail2ban ───────────────────────────────────────────────────────────────────
 fail2ban_ban_base: 300                # 5 minutes (seconds)
 fail2ban_findtime: 60
-fail2ban_scanner_maxretry: 3
-fail2ban_flood_maxretry: 20
 
 # ── Observability ──────────────────────────────────────────────────────────────
 loki_port: 3100

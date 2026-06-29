@@ -1,0 +1,16 @@
+api_key: {{ vault_crowdsec_edge_bouncer_key if 'edge' in group_names else vault_crowdsec_vps_bouncer_key }}
+api_url: http://{{ wireguard_client_ip }}:{{ crowdsec_lapi_port }}
+insecure_skip_verify: false
+disable_ipv6: true
+deny_action: DROP
+deny_log: false
+supported_decisions_types:
+  - ban
+nftables:
+  ipv4:
+    enabled: true
+    set-only: false
+    table: crowdsec
+    chain: crowdsec-chain
+  ipv6:
+    enabled: false

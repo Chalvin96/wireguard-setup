@@ -2,16 +2,7 @@
 # Managed by Ansible — do not edit manually
 
 add table inet blocklist
-flush table inet blocklist
-
-table inet blocklist {
-    set banned {
-        type ipv4_addr
-        flags timeout
-    }
-
-    chain input {
-        type filter hook input priority -10; policy accept;
-        ip saddr @banned drop
-    }
-}
+add set inet blocklist banned { type ipv4_addr; flags timeout; }
+add chain inet blocklist input { type filter hook input priority -10; policy accept; }
+flush chain inet blocklist input
+add rule inet blocklist input ip saddr @banned drop

@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install ansible-lint
-        run: pip install "ansible-lint==24.9.2"
+        run: pip install "ansible-core>=2.16,<2.18" "ansible-lint>=24.2,<25"
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ansible/requirements.yml

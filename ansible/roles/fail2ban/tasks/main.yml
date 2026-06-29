@@ -63,6 +63,11 @@
   when: "'edge' in group_names"
   notify: Restart fail2ban
 
+- name: Remove legacy caddy jail.d file if present
+  ansible.builtin.file:
+    path: /etc/fail2ban/jail.d/caddy.conf
+    state: absent
+
 - name: Deploy jail config
   ansible.builtin.template:
     src: jail.local.j2

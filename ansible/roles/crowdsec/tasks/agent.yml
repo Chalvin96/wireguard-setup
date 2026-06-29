@@ -88,3 +88,56 @@
     line: 'include "/etc/nftables.d/crowdsec-lapi.nft"'
     state: present
   notify: Reload nftables
+
+- name: Install Docker for blocklist-import
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+    update_cache: true
+
+- name: Enable Docker service
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Create crowdsec-blocklist-import directory
+  ansible.builtin.file:
+    path: /opt/crowdsec-blocklist-import
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+
+- name: Check if blocklist-import machine is registered
+  ansible.builtin.command:
+    cmd: cscli machines list -o json
+  register: crowdsec_machines
+  changed_when: false
+
+- name: Register blocklist-import machine
+  ansible.builtin.command:
+    cmd: >-
+      cscli machines add blocklist-import
+      --password "{{ vault_crowdsec_machine_password }}"
+      --url "http://{{ wireguard_client_ip }}:{{ crowdsec_lapi_port }}"
+  when: "'blocklist-import' not in crowdsec_machines.stdout"
+  changed_when: true
+  no_log: true
+
+- name: Deploy blocklist-import Docker Compose
+  ansible.builtin.template:
+    src: blocklist-import-compose.yml.j2
+    dest: /opt/crowdsec-blocklist-import/docker-compose.yml
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+  notify: Start blocklist-import
+
+- name: Start blocklist-import container
+  community.docker.docker_compose_v2:
+    project_src: /opt/crowdsec-blocklist-import
+    state: present

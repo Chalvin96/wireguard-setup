@@ -13,3 +13,4 @@ vault_vps_ban_ssh_private_key: |
 # Generate with: cscli bouncers add vps-bouncer --dry-run (or choose your own)
 vault_crowdsec_vps_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
 vault_crowdsec_edge_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
+vault_crowdsec_machine_password: "changeme-strong-password-for-blocklist-import-machine"

@@ -35,11 +35,11 @@ fail2ban (Mini PC)          Promtail (Mini PC)
 
 ## Node Inventory
 
-| Node | Role | Software |
-|------|------|----------|
-| VPS | Public ingress + ban enforcement | HAProxy, WireGuard server, nftables |
-| Mini PC | Edge proxy + detection + log shipping | Caddy, fail2ban, Promtail |
-| Monitoring VM | Observability | Loki, Prometheus, Grafana (Docker Compose) |
+| Node | Ansible Host | Role | Software |
+|------|-------------|------|----------|
+| VPS | `ingress-01` | Public ingress + ban enforcement | HAProxy, WireGuard server, nftables |
+| Mini PC | `edge-01` | Edge proxy + detection + log shipping | Caddy, fail2ban, Promtail |
+| Monitoring VM | `monitoring-01` | Observability | Loki, Prometheus, Grafana (Docker Compose) |
 
 ## Security Design
 
@@ -89,13 +89,13 @@ ansible/
     config.yml.example  ← all variables documented (real file gitignored)
     vault.yml           ← Ansible Vault encrypted secrets
   roles/
-    wireguard-server/   ← VPS: WireGuard server
-    haproxy/            ← VPS: TCP forward + PROXY Protocol v2
-    vps-blocklist/      ← VPS: nftables blocklist + banagent
-    caddy/              ← Mini PC: reverse proxy + metrics
-    fail2ban/           ← Mini PC: scanner detection + ban action
-    promtail/           ← Mini PC: log shipping to Loki
-    monitoring/         ← Monitoring VM: Docker Compose observability stack
+    wireguard-server/   ← ingress-01: WireGuard server
+    haproxy/            ← ingress-01: TCP forward + PROXY Protocol v2
+    vps-blocklist/      ← ingress-01: nftables blocklist + banagent
+    caddy/              ← edge-01: reverse proxy + metrics
+    fail2ban/           ← edge-01: scanner detection + ban action
+    promtail/           ← edge-01: log shipping to Loki
+    monitoring/         ← monitoring-01: Docker Compose observability stack
 ```
 
 ## Skills Demonstrated

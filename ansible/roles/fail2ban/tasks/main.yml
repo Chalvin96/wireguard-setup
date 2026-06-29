@@ -24,13 +24,13 @@
 
 - name: Scan VPS SSH host key
   ansible.builtin.command:
-    cmd: "ssh-keyscan -t ed25519 {{ vps_public_ip }}"
+    cmd: "ssh-keyscan -t ed25519 {{ ingress_ip }}"
   register: fail2ban_vps_hostkey
   changed_when: false
 
 - name: Set known_hosts for VPS (prevent MITM)
   ansible.builtin.known_hosts:
-    name: "{{ vps_public_ip }}"
+    name: "{{ ingress_ip }}"
     key: "{{ fail2ban_vps_hostkey.stdout }}"
     state: present
     path: /root/.ssh/known_hosts

@@ -1,6 +1,6 @@
 ---
 - name: Manually remove IP from VPS nftables blocklist
-  hosts: vps
+  hosts: ingress
   become: true
   vars_prompt:
     - name: ban_ip

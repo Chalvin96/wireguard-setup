@@ -16,10 +16,16 @@ defaults
 
 frontend http_in
     bind *:{{ haproxy_http_port }}
+    stick-table type ip size 100k expire 30s store conn_rate(10s)
+    tcp-request connection track-sc0 src
+    tcp-request connection reject if { sc_conn_rate(0) gt {{ haproxy_rate_limit }} }
     default_backend homelab_http
 
 frontend https_in
     bind *:{{ haproxy_https_port }}
+    stick-table type ip size 100k expire 30s store conn_rate(10s)
+    tcp-request connection track-sc0 src
+    tcp-request connection reject if { sc_conn_rate(0) gt {{ haproxy_rate_limit }} }
     default_backend homelab_https
 
 backend homelab_http

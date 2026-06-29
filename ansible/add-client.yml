@@ -2,7 +2,7 @@
 # Add a WireGuard peer to the VPS — run standalone, not part of site.yml.
 # ansible-playbook ansible/add-client.yml --vault-password-file .vault_password
 - name: Add WireGuard client
-  hosts: vps
+  hosts: ingress
   become: true
   vars_prompt:
     - name: client_name
@@ -100,6 +100,6 @@
 
           [Peer]
           PublicKey = {{ vault_wireguard_server_public_key }}
-          Endpoint = {{ vps_public_ip }}:{{ wireguard_port }}
+          Endpoint = {{ ingress_ip }}:{{ wireguard_port }}
           AllowedIPs = 0.0.0.0/0
           PersistentKeepalive = 25

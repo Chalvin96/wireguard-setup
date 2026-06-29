@@ -2,14 +2,15 @@
 wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
 wireguard_client_ip: "10.8.0.2"       # Mikrotik WireGuard tunnel IP
 wireguard_port: 51820
-vps_public_ip: "1.2.3.4"             # VPS public internet IP
+ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 
-minipc_lan_ip: "192.168.1.x"         # mini PC LAN IP (Caddy admin bind + firewall)
-monitor_vm_lan_ip: "192.168.1.x"     # monitoring VM LAN IP (Prometheus scrape source)
+edge_ip: "192.168.1.x"              # edge node LAN IP (Caddy admin bind + firewall)
+monitoring_ip: "192.168.1.x"        # monitoring node LAN IP (Prometheus scrape source)
 
 # ── HAProxy ────────────────────────────────────────────────────────────────────
 haproxy_http_port: 80
 haproxy_https_port: 443
+haproxy_rate_limit: 50               # max new connections per IP per 10s (TCP rate limit)
 
 # ── Caddy ──────────────────────────────────────────────────────────────────────
 caddy_domain: "example.com"           # primary domain (placeholder for user's Caddyfile)

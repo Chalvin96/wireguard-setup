@@ -3,15 +3,15 @@ all:
     ansible_user: deploy
     ansible_ssh_private_key_file: ~/.ssh/id_ed25519
   children:
-    vps:
+    ingress:
       hosts:
-        vps-01:
+        ingress-01:
           ansible_host: 1.2.3.4          # replace with real VPS public IP
     edge:
       hosts:
-        minipc:
-          ansible_host: 192.168.1.x      # replace with mini PC LAN IP
+        edge-01:
+          ansible_host: 192.168.1.x      # replace with edge node LAN IP
     monitoring:
       hosts:
-        monitor-vm:
-          ansible_host: 192.168.1.x      # replace with monitoring VM LAN IP
+        monitoring-01:
+          ansible_host: 192.168.1.x      # replace with monitoring node LAN IP

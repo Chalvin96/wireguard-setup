@@ -47,6 +47,14 @@
     owner: caddy
     group: caddy
 
+- name: Create Caddy conf.d directory
+  ansible.builtin.file:
+    path: /etc/caddy/conf.d
+    state: directory
+    mode: "0755"
+    owner: root
+    group: caddy
+
 - name: Write Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2

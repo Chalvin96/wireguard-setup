@@ -1,3 +1,8 @@
+mode: nftables
+pid_dir: /var/run/
+log_mode: file
+log_dir: /var/log/
+log_level: info
 api_key: {{ vault_crowdsec_edge_bouncer_key if 'edge' in group_names else vault_crowdsec_vps_bouncer_key }}
 api_url: "http://{% if 'edge' in group_names %}127.0.0.1{% else %}{{ wireguard_client_ip }}{% endif %}:{{ crowdsec_lapi_port }}"
 insecure_skip_verify: false

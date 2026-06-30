@@ -24,6 +24,11 @@
     state: present
     update_cache: true
 
+- name: Ensure promtail group exists
+  ansible.builtin.group:
+    name: promtail
+    state: present
+
 - name: Create promtail data directory
   ansible.builtin.file:
     path: /var/lib/promtail

@@ -15,6 +15,10 @@ vault_grafana_admin_user: "changeme-admin-username"
 vault_grafana_admin_password: "changeme-strong-password"
 vault_grafana_discord_webhook: "https://discord.com/api/webhooks/changeme"
 
+# ── Caddy / Cloudflare DNS-01 ──────────────────────────────────────────────────
+# Create a Cloudflare API token with Zone:DNS:Edit for the hosted zone.
+vault_caddy_cloudflare_api_token: "changeme-cloudflare-api-token"
+
 # ── CrowdSec ───────────────────────────────────────────────────────────────────
 # Generate with: cscli bouncers add vps-bouncer --dry-run (or choose your own)
 vault_crowdsec_vps_bouncer_key: "changeme-generate-with-cscli-bouncers-add"

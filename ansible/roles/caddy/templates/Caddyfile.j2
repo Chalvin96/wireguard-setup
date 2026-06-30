@@ -3,6 +3,7 @@
 {
     admin {{ edge_ip }}:2019
     metrics
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 
     servers {
         protocols h1 h2 h3
@@ -20,6 +21,7 @@
 (access_log) {
     log {
         output file /var/log/caddy/access.log {
+            mode 640
             roll_size 10mb
             roll_keep 14
         }

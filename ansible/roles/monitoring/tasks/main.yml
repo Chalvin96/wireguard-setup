@@ -81,6 +81,22 @@
     - /opt/monitoring/grafana/provisioning/dashboards
     - /opt/monitoring/grafana/provisioning/alerting
 
+- name: Fix prometheus-data ownership (runs as UID 65534/nobody)
+  ansible.builtin.file:
+    path: /opt/monitoring/prometheus-data
+    owner: "65534"
+    group: "65534"
+    state: directory
+    recurse: true
+
+- name: Fix loki-data ownership (runs as UID 10001)
+  ansible.builtin.file:
+    path: /opt/monitoring/loki-data
+    owner: "10001"
+    group: "10001"
+    state: directory
+    recurse: true
+
 - name: Fix grafana-data ownership (runs as UID 472)
   ansible.builtin.file:
     path: /opt/monitoring/grafana-data

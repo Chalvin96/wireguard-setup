@@ -1,0 +1,5 @@
+# Ansible Vault password — never commit
+.vault_password
+
+# Ansible runtime artifacts
+*.retry

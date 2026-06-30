@@ -1,4 +1,10 @@
 ---
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
 - name: Add CrowdSec GPG key
   ansible.builtin.get_url:
     url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
@@ -7,7 +13,7 @@
 
 - name: Add CrowdSec apt repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/ubuntu/ jammy main"
+    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/ {{ 'bookworm' if ansible_distribution == 'Debian' else ansible_distribution_release }} main"
     filename: crowdsec
     state: present
 
@@ -16,6 +22,8 @@
     name: crowdsec
     state: present
     update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
 
 - name: Configure CrowdSec LAPI to listen on WireGuard IP
   ansible.builtin.template:
@@ -165,6 +173,7 @@
       cscli machines add blocklist-import
       --password "{{ vault_crowdsec_machine_password }}"
       --url "http://127.0.0.1:{{ crowdsec_lapi_port }}"
+      -f -
   when: "'blocklist-import' not in crowdsec_machines.stdout"
   changed_when: true
   no_log: true

@@ -1,4 +1,10 @@
 ---
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
 - name: Add CrowdSec GPG key
   ansible.builtin.get_url:
     url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
@@ -7,7 +13,7 @@
 
 - name: Add CrowdSec apt repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/ubuntu/ jammy main"
+    repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/ {{ 'bookworm' if ansible_distribution == 'Debian' else ansible_distribution_release }} main"
     filename: crowdsec
     state: present
 

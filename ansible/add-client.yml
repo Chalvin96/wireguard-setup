@@ -60,7 +60,7 @@
       ansible.builtin.set_fact:
         add_client_next_octet: >-
           {{
-            (range(2, 254) | list
+            (range(3, 254) | list
              | difference(add_client_used_octets.stdout_lines | map('int') | list))
             | first
           }}

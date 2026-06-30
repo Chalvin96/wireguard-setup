@@ -1,7 +1,7 @@
 # ── Network ────────────────────────────────────────────────────────────────────
 wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
 wireguard_client_ip: "10.8.0.2"       # edge node WireGuard tunnel IP (assigned to wg0 on Mini PC; Mikrotik routes traffic to it)
-wireguard_port: 51820
+wireguard_port: 51820                 # VPS WireGuard ListenPort
 ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 
 edge_ip: "192.168.1.x"              # edge node LAN IP (Caddy admin bind + firewall)
@@ -14,7 +14,7 @@ haproxy_rate_limit: 50               # max new connections per IP per 10s (TCP r
 
 # ── Caddy ──────────────────────────────────────────────────────────────────────
 caddy_domain: "example.com"           # primary domain (placeholder for user's Caddyfile)
-caddy_backend_port: 8080              # example backend port
+caddy_backend_port: 8088             # example backend port (avoid 8080 — used by CrowdSec LAPI)
 
 # ── fail2ban ───────────────────────────────────────────────────────────────────
 fail2ban_ban_base: 300                # 5 minutes (seconds)

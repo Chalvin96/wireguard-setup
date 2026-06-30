@@ -39,6 +39,51 @@
     state: present
     update_cache: true
 
+- name: Require Cloudflare API token for Caddy DNS-01 challenges
+  ansible.builtin.assert:
+    that:
+      - vault_caddy_cloudflare_api_token is defined
+      - vault_caddy_cloudflare_api_token | length > 0
+      - vault_caddy_cloudflare_api_token != "changeme-cloudflare-api-token"
+    fail_msg: "Set vault_caddy_cloudflare_api_token in ansible/group_vars/all/vault.yml for Caddy Cloudflare DNS-01 certificate issuance."
+
+- name: Check installed Caddy modules
+  ansible.builtin.command:
+    cmd: caddy list-modules
+  register: caddy_modules
+  changed_when: false
+
+- name: Install Caddy Cloudflare DNS provider module
+  ansible.builtin.command:
+    cmd: caddy add-package github.com/caddy-dns/cloudflare@v0.2.4
+  when: "'dns.providers.cloudflare' not in caddy_modules.stdout"
+  notify: Restart Caddy
+
+- name: Create Caddy systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/caddy.service.d
+    state: directory
+    mode: "0755"
+
+- name: Write Caddy Cloudflare environment file
+  ansible.builtin.template:
+    src: cloudflare.env.j2
+    dest: /etc/caddy/cloudflare.env
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+  notify: Restart Caddy
+
+- name: Configure Caddy systemd environment file
+  ansible.builtin.template:
+    src: caddy.service.override.conf.j2
+    dest: /etc/systemd/system/caddy.service.d/override.conf
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Restart Caddy
+
 - name: Create Caddy log directory
   ansible.builtin.file:
     path: /var/log/caddy
@@ -46,6 +91,19 @@
     mode: "0755"
     owner: caddy
     group: caddy
+
+- name: Check if Caddy access log already exists
+  ansible.builtin.stat:
+    path: /var/log/caddy/access.log
+  register: caddy_access_log
+
+- name: Fix existing access log permissions (group-readable for promtail)
+  ansible.builtin.file:
+    path: /var/log/caddy/access.log
+    mode: "0640"
+    owner: caddy
+    group: caddy
+  when: caddy_access_log.stat.exists
 
 - name: Create Caddy conf.d directory
   ansible.builtin.file:
@@ -63,6 +121,8 @@
     owner: root
     group: caddy
     validate: caddy validate --config %s --adapter caddyfile
+  environment:
+    CLOUDFLARE_API_TOKEN: "{{ vault_caddy_cloudflare_api_token }}"
   notify: Restart Caddy
 
 - name: Install nftables on mini PC

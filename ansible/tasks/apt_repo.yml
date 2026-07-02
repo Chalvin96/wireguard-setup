@@ -7,20 +7,20 @@
     state: directory
     mode: "0755"
 
-- name: "Add {{ apt_repo_name }} signing key"
+- name: "Add signing key for {{ apt_repo_name }}"
   ansible.builtin.get_url:
     url: "{{ apt_repo_key_url }}"
     dest: "/etc/apt/keyrings/{{ apt_repo_name }}.asc"
     mode: "0644"
     force: true
 
-- name: "Add {{ apt_repo_name }} apt repository"
+- name: "Add apt repository for {{ apt_repo_name }}"
   ansible.builtin.apt_repository:
     repo: "{{ apt_repo_repo }}"
     filename: "{{ apt_repo_name }}"
     state: present
 
-- name: "Install {{ apt_repo_name }} packages"
+- name: "Install packages for {{ apt_repo_name }}"
   ansible.builtin.apt:
     name: "{{ apt_repo_packages }}"
     state: present

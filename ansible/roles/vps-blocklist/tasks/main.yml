@@ -7,7 +7,7 @@
   failed_when: false
 
 - name: Deploy blocklist firewall drop-in
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/nft_dropin.yml"
+  ansible.builtin.include_tasks: ../../../tasks/nft_dropin.yml
   vars:
     nft_dropin_name: blocklist
     nft_dropin_template: blocklist.nft.j2

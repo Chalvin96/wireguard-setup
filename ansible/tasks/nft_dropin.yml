@@ -13,14 +13,14 @@
     state: directory
     mode: "0755"
 
-- name: "Write {{ nft_dropin_name }}.nft drop-in"
+- name: "Write nftables drop-in for {{ nft_dropin_name }}"
   ansible.builtin.template:
     src: "{{ nft_dropin_template }}"
     dest: "/etc/nftables.d/{{ nft_dropin_name }}.nft"
     mode: "0644"
   notify: Reload nftables
 
-- name: "Include {{ nft_dropin_name }} in /etc/nftables.conf"
+- name: "Add nftables.conf include for {{ nft_dropin_name }}"
   ansible.builtin.lineinfile:
     path: /etc/nftables.conf
     line: 'include "/etc/nftables.d/{{ nft_dropin_name }}.nft"'

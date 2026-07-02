@@ -1,6 +1,6 @@
 ---
 - name: Install Promtail via shared apt-repo ritual
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/apt_repo.yml"
+  ansible.builtin.include_tasks: ../../../tasks/apt_repo.yml
   vars:
     apt_repo_name: grafana
     apt_repo_key_url: https://apt.grafana.com/gpg.key

@@ -9,7 +9,7 @@
     - /etc/apt/keyrings/caddy-stable.key
 
 - name: Install Caddy via shared apt-repo ritual
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/apt_repo.yml"
+  ansible.builtin.include_tasks: ../../../tasks/apt_repo.yml
   vars:
     apt_repo_name: caddy
     apt_repo_key_url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
@@ -35,6 +35,7 @@
   ansible.builtin.command:
     cmd: caddy add-package github.com/caddy-dns/cloudflare@v0.2.4
   when: "'dns.providers.cloudflare' not in caddy_modules.stdout"
+  changed_when: true
   notify: Restart Caddy
 
 - name: Create Caddy systemd override directory
@@ -104,7 +105,7 @@
   notify: Restart Caddy
 
 - name: Restrict Caddy metrics port to monitoring VM
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/nft_dropin.yml"
+  ansible.builtin.include_tasks: ../../../tasks/nft_dropin.yml
   vars:
     nft_dropin_name: caddy-metrics
     nft_dropin_template: caddy-metrics.nft.j2

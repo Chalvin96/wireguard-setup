@@ -1,11 +1,14 @@
 ---
 - name: Install CrowdSec via shared apt-repo ritual
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/apt_repo.yml"
+  ansible.builtin.include_tasks: ../../../tasks/apt_repo.yml
   vars:
     apt_repo_name: crowdsec
     apt_repo_key_url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
     # bookworm pinned deliberately for Debian: packagecloud has no trixie build yet
-    apt_repo_repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/ {{ 'bookworm' if ansible_distribution == 'Debian' else ansible_distribution_release }} main"
+    apt_repo_repo: >-
+      deb [signed-by=/etc/apt/keyrings/crowdsec.asc]
+      https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/
+      {{ 'bookworm' if ansible_distribution == 'Debian' else ansible_distribution_release }} main
     apt_repo_packages:
       - crowdsec
 
@@ -61,7 +64,7 @@
   no_log: true
 
 - name: Restrict CrowdSec LAPI to VPS WireGuard IP
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/nft_dropin.yml"
+  ansible.builtin.include_tasks: ../../../tasks/nft_dropin.yml
   vars:
     nft_dropin_name: crowdsec-lapi
     nft_dropin_template: crowdsec-lapi.nft.j2

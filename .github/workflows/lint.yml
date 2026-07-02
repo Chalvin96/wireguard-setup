@@ -25,5 +25,12 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
 
+      - name: Debug lint results (temporary)
+        continue-on-error: true
+        run: |
+          echo "::error::VERSIONS $(pip freeze | grep -iE '^(ansible|ruamel|yamllint)' | tr '\n' ' ')"
+          cd ansible
+          ansible-lint -p 2>&1 | grep -E ':[0-9]+:' | head -6 | while read -r line; do echo "::error::LINT ${line}"; done
+
       - name: Run ansible-lint
         run: cd ansible && ansible-lint

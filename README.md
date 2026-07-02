@@ -1,17 +1,19 @@
-# Homelab Security & Observability Stack
+# Self-hosting from behind CGNAT
 
 ![ansible-lint](https://github.com/Chalvin96/wireguard-setup/actions/workflows/lint.yml/badge.svg)
 
-A single-command Ansible project that provisions a hardened 3-node homelab:
-**WireGuard** tunneling, **HAProxy** TCP forwarding with PROXY Protocol v2,
-**CrowdSec** threat detection + 13 proactive blocklist feeds, **fail2ban** SSH
-defense, **Caddy** TLS reverse proxy, and a full **Loki → Prometheus → Grafana**
-observability pipeline.
+My home connection sits behind CGNAT — no public IP, no port forwarding. This
+repo is how I expose home-hosted services anyway: a cheap VPS acts as a rented
+front door, a WireGuard tunnel carries traffic home, and defense-in-depth runs
+on both ends. One Ansible command provisions all three nodes.
 
-> Replaces the old root-level shell scripts. The Ansible roles are now the single
-> source of truth (idempotent, vault-encrypted, lint-clean).
-
----
+**Why not the obvious alternatives?** A Cloudflare Tunnel means a third party
+terminates my TLS and owns my ingress. A plain reverse proxy on the VPS means
+the provider sees plaintext and every backend log shows the VPS's IP instead
+of the real client. Instead: HAProxy on the VPS forwards **raw TCP** with
+**PROXY Protocol v2**, so TLS terminates at home and the original client IP
+survives end-to-end — which is what makes real per-IP detection and banning
+possible.
 
 ## Architecture
 
@@ -38,7 +40,7 @@ flowchart TD
         PT["Promtail"]
     end
 
-    BACK(["backend services :8080"]):::ext
+    BACK(["backend services"]):::ext
 
     subgraph MON["Monitoring VM · monitoring-01"]
         LOKI["Loki"]
@@ -75,93 +77,79 @@ outside Ansible's control.
 
 ### How traffic flows
 
-1. A request hits the **VPS** on `:80/:443`. **HAProxy** terminates the TCP
-   connection, applies a per-IP rate limit, then forwards over the **WireGuard**
-   tunnel prepended with PROXY Protocol v2 (so the real client IP survives).
-2. The **Mikrotik** router (configured manually — RouterOS has no Ansible module)
-   routes the tunnel traffic to the **Mini PC**.
-3. **Caddy** on the Mini PC unwraps PROXY Protocol v2, terminates TLS, and
-   reverse-proxies to your backend.
-4. In parallel, **CrowdSec** reads Caddy's JSON access log, and **Promtail**
-   ships those logs to the **Monitoring VM**.
+1. A request hits the **VPS** on `:80/:443`. **HAProxy** applies a per-IP rate
+   limit and forwards the raw TCP over the **WireGuard** tunnel, prepended with
+   PROXY Protocol v2.
+2. The **Mikrotik** router routes tunnel traffic to the **Mini PC**
+   ([manual setup](docs/routeros.md)).
+3. **Caddy** unwraps PROXY v2, terminates TLS (Cloudflare DNS-01 — no inbound
+   port 80 needed for ACME), and reverse-proxies to LAN backends.
+4. In parallel, **CrowdSec** reads Caddy's JSON access log and **Promtail**
+   ships it to the Monitoring VM.
 
-## Node Inventory
+## Design decisions
 
-| Node | Ansible host | Runs |
-|------|--------------|------|
-| **VPS** (Hetzner/DigitalOcean) | `ingress-01` | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH) |
-| **Mini PC** | `edge-01` | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail |
-| **Monitoring VM** | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose) |
+- **HAProxy runs in TCP mode, not HTTP.** TLS terminates at home; the VPS
+  provider never sees plaintext. PROXY Protocol v2 is the price of that choice
+  — and the reason client IPs still reach Caddy, CrowdSec, and fail2ban.
+- **Bans are enforced on the VPS, not just at home.** The VPS bouncer queries
+  the edge LAPI over the tunnel and drops banned IPs at the public ingress —
+  tunnel bandwidth is the scarce resource, so garbage traffic dies before it.
+- **The LAPI firewall fence is applied *before* CrowdSec starts.** The API
+  binds `0.0.0.0`, but an nftables chain restricting it to `127.0.0.1` + the
+  VPS tunnel IP is loaded first, so there is no unfenced window.
+- **The edge play deploys before the ingress play.** The LAPI and its
+  registered bouncer keys must exist before the VPS bouncer starts — see the
+  post-mortem below.
+- **Every play starts with a preflight `assert` on the network contract** —
+  the cross-node ports and tunnel IPs that several roles must agree on
+  (documented in [CONTEXT.md](CONTEXT.md)). A mismatch fails in seconds, not
+  at runtime on the box.
+- **Repeated rituals live behind seams.** Every apt source goes through one
+  parameterized task file (`tasks/apt_repo.yml`), every firewall drop-in
+  through another (`tasks/nft_dropin.yml`) — each role is self-sufficient
+  regardless of play order, and a fix lands once instead of five times.
+- **This repo is a provisioning scaffold by design.** Caddy site blocks are
+  hand-authored on the host (`/etc/caddy/conf.d/*.caddy`); real inventory,
+  variables, and secrets are gitignored. What you see here is everything that
+  is safe to publish.
 
-## Security Design
+## Security model
 
-### CrowdSec — web threat detection + proactive blocking
+**CrowdSec** runs its LAPI on the edge node, tailing Caddy's JSON access log
+with community Hub scenarios (`crowdsecurity/caddy`, `base-http-scenarios`,
+`http-cve`) to catch scanners, CVE probes, and floods. Decisions are enforced
+by two nftables bouncers — one on the edge, one on the VPS. A
+**blocklist-import** container adds 13 proactive feeds daily (Spamhaus
+DROP/eDROP, Firehol L1/L2, DShield, Emerging Threats, Talos, CIARMY,
+GreenSnow, StopForumSpam, Tor exits, and more) with 24-hour TTLs.
 
-Runs on the edge node as the **LAPI** server. It tails Caddy's JSON access log
-and applies community Hub scenarios — `crowdsecurity/caddy`,
-`crowdsecurity/base-http-scenarios`, `crowdsecurity/http-cve` — to catch
-scanners, CVE probes, and flooding. Scenarios are community-maintained and
-auto-update.
+**fail2ban** covers SSH on both nodes with incremental bans
+(`nftables[type=allports]`):
 
-Two **nftables bouncers** enforce decisions:
-- **Edge bouncer** (Mini PC) — drops banned IPs before they reach Caddy.
-- **VPS bouncer** — queries the edge LAPI over the WireGuard tunnel and drops IPs
-  at the public ingress *before* they waste tunnel bandwidth.
+| Offence | 1st | 2nd | 3rd | 4th | 5th+ |
+|---------|-----|-----|-----|-----|------|
+| Ban     | 5 min | 25 min | 2.5 h | 5 h | 25 h |
 
-**blocklist-import** — a Docker container on the edge pulls 13 proactive feeds
-daily (Spamhaus DROP/eDROP, Firehol L1/L2, DShield, Emerging Threats, Talos,
-CIARMY, GreenSnow, StopForumSpam, Tor exits, CrowdSec community list). Decisions
-carry a 24-hour TTL.
-
-**LAPI hardening** — the socket binds to `0.0.0.0` but an nftables chain
-(`crowdsec-lapi`) accepts only `127.0.0.1` and the VPS WireGuard IP
-(`10.8.0.1`). The rule is applied *before* CrowdSec starts to close the window.
-
-### fail2ban — SSH brute-force (both nodes)
-
-SSH-only, incremental banning via `nftables[type=allports]`:
-
-| Offence | Ban duration |
-|---------|--------------|
-| 1st | 5 min |
-| 2nd | 25 min |
-| 3rd | 2.5 h |
-| 4th | 5 h |
-| 5th+ | 25 h |
-
-### General
-
-- **Ansible Vault (AES-256)** encrypts every secret; `.example` files document
-  them, real configs are gitignored.
-- **PROXY Protocol v2** carries the true client IP end-to-end, so detection and
-  banning always act on the real source.
-- **nftables TTL bans** auto-expire — no manual unban needed in the normal path.
+**Secrets** live in Ansible Vault (AES-256); `.example` files document every
+variable and the real configs never touch git. nftables drop-ins fence the
+CrowdSec LAPI and Caddy admin/metrics ports to exactly the hosts that need
+them.
 
 ## Observability
 
-`Promtail → Loki → Prometheus → Grafana` on the Monitoring VM (Docker Compose):
+`Promtail → Loki` for logs, `Prometheus → Grafana` for metrics, all Docker
+Compose on the monitoring VM. Grafana ships with a provisioned homelab
+dashboard and a Discord alert on disk pressure. Caddy's admin API binds the
+LAN IP only, and its metrics port is nftables-restricted to the monitoring
+VM; all monitoring ports bind `monitoring_ip`, never `0.0.0.0`.
 
-- **Promtail** ships Caddy + fail2ban logs from the edge to **Loki**.
-- **Prometheus** scrapes Caddy's `/metrics` endpoint (admin API bound to the LAN
-  IP, restricted to the Monitoring VM by nftables).
-- **Grafana** ships with a provisioned homelab dashboard + a Discord alert when
-  disk usage crosses the threshold.
-- All Docker ports bind to `monitoring_ip` (never `0.0.0.0`).
-
-## Prerequisites
-
-- Ansible 2.14+ and `ansible-lint` on your laptop
-- Required collections: `ansible-galaxy collection install -r ansible/requirements.yml`
-- Three nodes (VPS + Mini PC + Monitoring VM) on Debian/Ubuntu
-- Mikrotik set up manually — see [`routeros-wireguard-setup.txt`](routeros-wireguard-setup.txt)
-
-## Quick Start
+## Quick start
 
 ```bash
-# 1. Copy and fill in config files
+# 1. Copy and fill in config files (real files are gitignored)
 cp ansible/inventory/hosts.yml.example        ansible/inventory/hosts.yml
 cp ansible/group_vars/all/config.yml.example  ansible/group_vars/all/config.yml
-# Edit both with real IPs, domain, ports
 
 # 2. Pre-generate keys, then seal them in the vault
 #    WireGuard:  wg genkey | tee private.key | wg pubkey > public.key
@@ -169,75 +157,71 @@ ansible-vault edit ansible/group_vars/all/vault.yml
 
 # 3. Bootstrap the deploy user on each host (one-time)
 ansible-playbook ansible/bootstrap.yml -u <your_user> -k -K
-# Non-default key path? add:  -e bootstrap_ssh_pubkey=~/.ssh/id_rsa.pub
 
-# 4. Deploy the whole stack
-ansible-playbook ansible/site.yml --vault-password-file ansible/.vault_password
+# 4. Deploy the whole stack — each play preflight-asserts the network
+#    contract before touching anything
+ansible-playbook ansible/site.yml --vault-password-file .vault_password
 
 # 5. Add a WireGuard client (writes <client>.conf locally — no key in stdout)
-ansible-playbook ansible/add-client.yml --vault-password-file ansible/.vault_password
+ansible-playbook ansible/add-client.yml --vault-password-file .vault_password
 ```
 
-## Operations
+Full variable reference: [docs/configuration.md](docs/configuration.md).
 
-Manual, out-of-band enforcement on the VPS nftables blocklist:
+### Operations
 
 ```bash
-# Ban an IP for N seconds (uses the restricted banagent account)
+# Emergency ban on the VPS blocklist (restricted SSH forced-command account)
 ssh -i <vps_ban private key> banagent@<ingress_ip> "203.0.113.5 3600"
 
 # Unban an IP (playbook validates the IP format)
 ansible-playbook ansible/unban.yml
 ```
 
-## Repository Layout
+## Repository layout
 
 ```
 ansible/
-├── site.yml              # deploy all roles in order (ingress / edge / monitoring)
+├── site.yml              # deploy all roles in order (edge → ingress → monitoring)
 ├── add-client.yml        # add WireGuard peer → writes client.conf locally
 ├── bootstrap.yml         # one-time: create deploy user + install SSH key
 ├── unban.yml             # manual unban (prompts for IP)
-├── inventory/hosts.yml.example
-└── group_vars/all/
-    ├── config.yml.example  # all variables documented
-    └── vault.yml           # Ansible Vault encrypted secrets
+├── tasks/                # shared rituals: apt_repo.yml, nft_dropin.yml
+└── group_vars/all/       # config.yml.example + vault.yml (encrypted)
 roles/
-├── wireguard-server/    # ingress-01: WG server + peer mgmt (wg0 + wg0-peers.conf)
-├── haproxy/             # ingress-01: TCP forward + PROXY v2 + rate limiting
-├── vps-blocklist/       # ingress-01: nftables blocklist + banagent ban-ip tool
-├── fail2ban/            # both nodes: SSH incremental banning via nftables
-├── crowdsec/            # edge-01: LAPI + Hub + blocklist-import  |  ingress-01: bouncer
-├── caddy/               # edge-01: reverse proxy + metrics + nftables ACL
-├── promtail/            # edge-01: log shipping to Loki
-└── monitoring/          # monitoring-01: Docker Compose observability stack
+├── wireguard-server/    # ingress: WG server + peer management
+├── haproxy/             # ingress: TCP forward + PROXY v2 + rate limiting
+├── vps-blocklist/       # ingress: nftables blocklist + banagent tool
+├── fail2ban/            # both: SSH incremental banning
+├── crowdsec-lapi/       # edge: LAPI + Hub + key registration + blocklist-import
+├── crowdsec-bouncer/    # both: firewall bouncer (lapi_host + key set per play)
+├── docker/              # shared: Docker CE install
+├── caddy/               # edge: reverse proxy + metrics + nftables ACL
+├── promtail/            # edge: log shipping to Loki
+└── monitoring/          # monitoring: Compose observability stack
 ```
 
-## Vault Variables
+Architecture vocabulary and cross-role contracts: [CONTEXT.md](CONTEXT.md).
 
-See [`ansible/group_vars/all/vault.yml.example`](ansible/group_vars/all/vault.yml.example)
-for the full list. Highlights:
+## Post-mortem: the first-deploy race
 
-| Variable | Purpose |
-|----------|---------|
-| `vault_wireguard_server_private_key` | WireGuard server private key |
-| `vault_wireguard_server_public_key` | Server public key (distributed to clients) |
-| `vault_vps_ban_ssh_private_key` | Key for the emergency `banagent` command |
-| `vault_vps_ban_ssh_public_key` | Public half (installed in banagent `authorized_keys`) |
-| `vault_grafana_admin_user` / `..._password` | Grafana admin credentials |
-| `vault_grafana_discord_webhook` | Discord webhook for disk alerts |
-| `vault_crowdsec_vps_bouncer_key` | Pre-shared key for the VPS CrowdSec bouncer |
-| `vault_crowdsec_edge_bouncer_key` | Pre-shared key for the edge CrowdSec bouncer |
-| `vault_crowdsec_machine_password` | Password for the blocklist-import machine account |
+On a clean deploy, the VPS CrowdSec bouncer started before the edge LAPI it
+registers against existed — the ingress play simply ran first, so the first
+run always "failed" and only converged on a re-run. The fix was twofold:
+reorder `site.yml` so the edge play (LAPI + bouncer-key registration) runs
+first, and split the old dual-personality crowdsec role into `crowdsec-lapi`
+and a topology-agnostic `crowdsec-bouncer` so the dependency is visible in
+the play instead of buried in template conditionals.
 
-## Skills Demonstrated
+## Limitations & roadmap
 
-| Area | Implementation |
-|------|----------------|
-| Infrastructure as Code | Idempotent Ansible roles, inventory groups, FQCN modules |
-| Networking | WireGuard VPN, HAProxy TCP mode, PROXY Protocol v2, nftables |
-| Security | CrowdSec detection, proactive blocklist feeds, fail2ban, Ansible Vault |
-| Threat intelligence | 13-feed blocklist-import, CrowdSec Hub scenarios |
-| Observability | Loki + Prometheus + Grafana, Discord alerting |
-| Secrets management | Ansible Vault AES-256, gitignored configs, `.example` templates |
-| CI | GitHub Actions `ansible-lint` (production profile, 0 failures) |
+- **RouterOS is out of Ansible scope for now.** The manual configuration is
+  documented step-by-step in [docs/routeros.md](docs/routeros.md); automating
+  it via the community RouterOS collection is the top roadmap item.
+- **No molecule tests yet.** The preflight asserts and `caddy validate` /
+  `visudo -cf` template validation cover part of that gap; molecule scenarios
+  for the crowdsec roles are next.
+- **CrowdSec pins Debian `bookworm`** — packagecloud publishes no trixie
+  build yet; the pin is deliberate and commented in the roles.
+- **Single-operator homelab scale.** No HA anywhere, and that's a non-goal:
+  the VPS is disposable and re-provisionable in one command.

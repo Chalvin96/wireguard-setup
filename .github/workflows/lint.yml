@@ -28,9 +28,11 @@ jobs:
       - name: Debug lint results (temporary)
         continue-on-error: true
         run: |
-          echo "::error::VERSIONS $(pip freeze | grep -iE '^(ansible|ruamel|yamllint)' | tr '\n' ' ')"
+          echo "::error::HEAD $(git rev-parse HEAD) PARENTS $(git log --pretty=%P -1 HEAD)"
+          echo "::error::SHA256 $(sha256sum ansible/roles/caddy/tasks/main.yml | cut -c1-16) LINES $(wc -l < ansible/roles/caddy/tasks/main.yml)"
+          echo "::error::CONTENT $(sed -n '74,84p' ansible/roles/caddy/tasks/main.yml | tr '\n' '|' | head -c 800)"
           cd ansible
-          ansible-lint -p 2>&1 | grep -E ':[0-9]+:' | head -6 | while read -r line; do echo "::error::LINT ${line}"; done
+          echo "::error::SOLO $(ansible-lint -p roles/caddy/tasks/main.yml 2>/dev/null | grep -E ':[0-9]+:' | head -3 | tr '\n' ' ')"
 
       - name: Run ansible-lint
         run: cd ansible && ansible-lint

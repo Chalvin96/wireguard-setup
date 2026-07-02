@@ -187,18 +187,18 @@ ansible/
 ├── bootstrap.yml         # one-time: create deploy user + install SSH key
 ├── unban.yml             # manual unban (prompts for IP)
 ├── tasks/                # shared rituals: apt_repo.yml, nft_dropin.yml
-└── group_vars/all/       # config.yml.example + vault.yml (encrypted)
-roles/
-├── wireguard-server/    # ingress: WG server + peer management
-├── haproxy/             # ingress: TCP forward + PROXY v2 + rate limiting
-├── vps-blocklist/       # ingress: nftables blocklist + banagent tool
-├── fail2ban/            # both: SSH incremental banning
-├── crowdsec-lapi/       # edge: LAPI + Hub + key registration + blocklist-import
-├── crowdsec-bouncer/    # both: firewall bouncer (lapi_host + key set per play)
-├── docker/              # shared: Docker CE install
-├── caddy/               # edge: reverse proxy + metrics + nftables ACL
-├── promtail/            # edge: log shipping to Loki
-└── monitoring/          # monitoring: Compose observability stack
+├── group_vars/all/       # config.yml.example + vault.yml (encrypted)
+└── roles/
+    ├── wireguard-server/    # ingress: WG server + peer management
+    ├── haproxy/             # ingress: TCP forward + PROXY v2 + rate limiting
+    ├── vps-blocklist/       # ingress: nftables blocklist + banagent tool
+    ├── fail2ban/            # both: SSH incremental banning
+    ├── crowdsec-lapi/       # edge: LAPI + Hub + key registration + blocklist-import
+    ├── crowdsec-bouncer/    # both: firewall bouncer (lapi_host + key set per play)
+    ├── docker/              # shared: Docker CE install
+    ├── caddy/               # edge: reverse proxy + metrics + nftables ACL
+    ├── promtail/            # edge: log shipping to Loki
+    └── monitoring/          # monitoring: Compose observability stack
 ```
 
 Architecture vocabulary and cross-role contracts: [CONTEXT.md](CONTEXT.md).

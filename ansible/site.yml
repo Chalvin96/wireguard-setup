@@ -1,20 +1,6 @@
 ---
-# Full stack deploy — runs in dependency order.
+# Edge runs first: the CrowdSec LAPI + bouncer keys must exist before the VPS bouncer starts.
 # Run: ansible-playbook ansible/site.yml --vault-password-file .vault_password
-
-- name: VPS — ingress stack
-  hosts: ingress
-  become: true
-  gather_facts: true
-  gather_subset:
-    - network
-    - distribution
-  roles:
-    - wireguard-server
-    - haproxy
-    - vps-blocklist
-    - fail2ban
-    - crowdsec
 
 - name: Edge — reverse proxy + security stack
   hosts: edge
@@ -23,11 +9,58 @@
   gather_subset:
     - network
     - distribution
+  pre_tasks:
+    - name: Preflight — network contract
+      ansible.builtin.assert:
+        that:
+          - wireguard_server_ip is defined
+          - wireguard_client_ip is defined
+          - crowdsec_lapi_port is defined
+          - caddy_admin_port is defined
+          - edge_ip is defined
+          - monitoring_ip is defined
+          - vault_crowdsec_edge_bouncer_key is defined
+          - vault_crowdsec_vps_bouncer_key is defined
+        fail_msg: >-
+          Network contract incomplete — check ansible/group_vars/all/config.yml
+          and vault.yml against config.yml.example / vault.yml.example.
   roles:
     - caddy
     - fail2ban
     - promtail
-    - crowdsec
+    - crowdsec-lapi
+    - role: crowdsec-bouncer
+      vars:
+        crowdsec_lapi_host: 127.0.0.1
+        crowdsec_bouncer_api_key: "{{ vault_crowdsec_edge_bouncer_key }}"
+
+- name: VPS — ingress stack
+  hosts: ingress
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  pre_tasks:
+    - name: Preflight — network contract
+      ansible.builtin.assert:
+        that:
+          - wireguard_server_ip is defined
+          - wireguard_client_ip is defined
+          - crowdsec_lapi_port is defined
+          - vault_crowdsec_vps_bouncer_key is defined
+        fail_msg: >-
+          Network contract incomplete — check ansible/group_vars/all/config.yml
+          and vault.yml against config.yml.example / vault.yml.example.
+  roles:
+    - wireguard-server
+    - haproxy
+    - vps-blocklist
+    - fail2ban
+    - role: crowdsec-bouncer
+      vars:
+        crowdsec_lapi_host: "{{ wireguard_client_ip }}"
+        crowdsec_bouncer_api_key: "{{ vault_crowdsec_vps_bouncer_key }}"
 
 - name: Monitoring VM — observability stack
   hosts: monitoring
@@ -36,5 +69,15 @@
   gather_subset:
     - network
     - distribution
+  pre_tasks:
+    - name: Preflight — network contract
+      ansible.builtin.assert:
+        that:
+          - edge_ip is defined
+          - caddy_admin_port is defined
+          - node_exporter_port is defined
+        fail_msg: >-
+          Network contract incomplete — check ansible/group_vars/all/config.yml
+          against config.yml.example.
   roles:
     - monitoring

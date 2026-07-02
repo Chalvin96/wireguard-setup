@@ -15,6 +15,7 @@ haproxy_rate_limit: 50               # max new connections per IP per 10s (TCP r
 # ── Caddy ──────────────────────────────────────────────────────────────────────
 caddy_domain: "example.com"           # primary domain (placeholder for user's Caddyfile)
 caddy_backend_port: 8088             # example backend port (avoid 8080 — used by CrowdSec LAPI)
+caddy_admin_port: 2019                # admin/metrics API (Caddyfile bind, edge firewall, Prometheus scrape)
 
 # ── fail2ban ───────────────────────────────────────────────────────────────────
 fail2ban_ban_base: 300                # 5 minutes (seconds)

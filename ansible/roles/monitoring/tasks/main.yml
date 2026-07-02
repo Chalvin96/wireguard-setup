@@ -1,57 +1,8 @@
 ---
 # ── Docker CE ──────────────────────────────────────────────────────────────────
-- name: Install Docker dependencies
-  ansible.builtin.apt:
-    name:
-      - ca-certificates
-      - curl
-      - gnupg
-    state: present
-    update_cache: true
-
-- name: Ensure apt keyrings directory
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: "0755"
-
-- name: Download Docker GPG key
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    mode: "0644"
-
-- name: Determine dpkg architecture
-  ansible.builtin.command: dpkg --print-architecture
-  register: monitoring_dpkg_arch
-  changed_when: false
-
-- name: Add Docker apt repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch={{ monitoring_dpkg_arch.stdout }}
-      signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/{{ ansible_distribution | lower }}
-      {{ ansible_distribution_release }} stable
-    filename: docker
-    state: present
-    update_cache: true
-
-- name: Install Docker CE and Compose plugin
-  ansible.builtin.apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-compose-plugin
-    state: present
-    update_cache: true
-
-- name: Enable Docker
-  ansible.builtin.systemd:
+- name: Install Docker CE
+  ansible.builtin.include_role:
     name: docker
-    enabled: true
-    state: started
 
 # ── Node Exporter ──────────────────────────────────────────────────────────────
 - name: Install Node Exporter
@@ -104,6 +55,7 @@
     group: "472"
     state: directory
     mode: "0755"
+    recurse: true
 
 # ── Config files ───────────────────────────────────────────────────────────────
 - name: Write docker-compose.yml

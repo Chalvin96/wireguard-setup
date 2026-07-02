@@ -1,0 +1,28 @@
+---
+# Requires per-play vars from site.yml: crowdsec_lapi_host, crowdsec_bouncer_api_key
+- name: Install CrowdSec firewall bouncer via shared apt-repo ritual
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/apt_repo.yml"
+  vars:
+    apt_repo_name: crowdsec
+    apt_repo_key_url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
+    # bookworm pinned deliberately for Debian: packagecloud has no trixie build yet
+    apt_repo_repo: "deb [signed-by=/etc/apt/keyrings/crowdsec.asc] https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/ {{ 'bookworm' if ansible_distribution == 'Debian' else ansible_distribution_release }} main"
+    apt_repo_packages:
+      - crowdsec-firewall-bouncer-nftables
+
+- name: Configure CrowdSec firewall bouncer
+  ansible.builtin.template:
+    src: crowdsec-firewall-bouncer.yaml.j2
+    dest: /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+  notify: Restart crowdsec-firewall-bouncer
+
+- name: Enable and start CrowdSec firewall bouncer
+  ansible.builtin.systemd:
+    name: crowdsec-firewall-bouncer
+    enabled: true
+    state: started
+    daemon_reload: true

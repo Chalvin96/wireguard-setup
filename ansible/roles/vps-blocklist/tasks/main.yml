@@ -6,37 +6,11 @@
     enabled: false
   failed_when: false
 
-- name: Install nftables
-  ansible.builtin.apt:
-    name: nftables
-    state: present
-    update_cache: true
-
-- name: Create /etc/nftables.d directory
-  ansible.builtin.file:
-    path: /etc/nftables.d
-    state: directory
-    mode: "0755"
-
-- name: Write blocklist.nft
-  ansible.builtin.template:
-    src: blocklist.nft.j2
-    dest: /etc/nftables.d/blocklist.nft
-    mode: "0644"
-  notify: Reload nftables
-
-- name: Include blocklist in /etc/nftables.conf
-  ansible.builtin.lineinfile:
-    path: /etc/nftables.conf
-    line: 'include "/etc/nftables.d/blocklist.nft"'
-    state: present
-  notify: Reload nftables
-
-- name: Enable and start nftables
-  ansible.builtin.systemd:
-    name: nftables
-    enabled: true
-    state: started
+- name: Deploy blocklist firewall drop-in
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/nft_dropin.yml"
+  vars:
+    nft_dropin_name: blocklist
+    nft_dropin_template: blocklist.nft.j2
 
 - name: Create banagent system user
   ansible.builtin.user:

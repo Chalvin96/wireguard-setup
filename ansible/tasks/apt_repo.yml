@@ -1,0 +1,29 @@
+---
+# Shared apt-repo ritual: keyring → signing key → repo → packages.
+# Vars: apt_repo_name, apt_repo_key_url, apt_repo_repo, apt_repo_packages
+- name: Create apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: "Add {{ apt_repo_name }} signing key"
+  ansible.builtin.get_url:
+    url: "{{ apt_repo_key_url }}"
+    dest: "/etc/apt/keyrings/{{ apt_repo_name }}.asc"
+    mode: "0644"
+    force: true
+
+- name: "Add {{ apt_repo_name }} apt repository"
+  ansible.builtin.apt_repository:
+    repo: "{{ apt_repo_repo }}"
+    filename: "{{ apt_repo_name }}"
+    state: present
+
+- name: "Install {{ apt_repo_name }} packages"
+  ansible.builtin.apt:
+    name: "{{ apt_repo_packages }}"
+    state: present
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive

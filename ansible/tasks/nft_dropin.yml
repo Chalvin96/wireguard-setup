@@ -1,0 +1,36 @@
+---
+# Shared nftables drop-in ritual. Vars: nft_dropin_name, nft_dropin_template
+# (resolved in the calling role's templates/). Caller provides a "Reload nftables" handler.
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+
+- name: Create /etc/nftables.d directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: "Write {{ nft_dropin_name }}.nft drop-in"
+  ansible.builtin.template:
+    src: "{{ nft_dropin_template }}"
+    dest: "/etc/nftables.d/{{ nft_dropin_name }}.nft"
+    mode: "0644"
+  notify: Reload nftables
+
+- name: "Include {{ nft_dropin_name }} in /etc/nftables.conf"
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/{{ nft_dropin_name }}.nft"'
+    state: present
+    create: true
+    mode: "0755"
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started

@@ -8,7 +8,7 @@ conventions they require are their **interfaces**.
 
 - **ingress** — the public VPS. Terminates nothing; HAProxy forwards TCP with
   PROXY protocol v2 over the WireGuard tunnel.
-- **edge** — the mini PC on the LAN. Runs Caddy (TLS termination, reverse
+- **edge** — the Edge node on the LAN. Runs Caddy (TLS termination, reverse
   proxy), the CrowdSec LAPI, and promtail.
 - **monitoring** — the LAN VM running the Dockerized Prometheus/Loki/Grafana
   stack.

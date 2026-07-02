@@ -31,7 +31,7 @@ flowchart TD
 
     MIK(("Mikrotik<br/>RouterOS · manual")):::ext
 
-    subgraph EDGE["Mini PC · edge-01 · LAN"]
+    subgraph EDGE["Edge node · edge-01 · LAN"]
         CAD["Caddy<br/>unwrap PROXY v2 · TLS · JSON logs"]
         CSA["CrowdSec agent + LAPI<br/>reads access.log"]
         BLI["blocklist-import<br/>13 feeds / day"]
@@ -80,7 +80,7 @@ outside Ansible's control.
 1. A request hits the **VPS** on `:80/:443`. **HAProxy** applies a per-IP rate
    limit and forwards the raw TCP over the **WireGuard** tunnel, prepended with
    PROXY Protocol v2.
-2. The **Mikrotik** router routes tunnel traffic to the **Mini PC**
+2. The **Mikrotik** router routes tunnel traffic to the **Edge node**
    ([manual setup](docs/routeros.md)).
 3. **Caddy** unwraps PROXY v2, terminates TLS (Cloudflare DNS-01 — no inbound
    port 80 needed for ACME), and reverse-proxies to LAN backends.

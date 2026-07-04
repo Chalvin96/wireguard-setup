@@ -1,6 +1,7 @@
 # ── Network ────────────────────────────────────────────────────────────────────
 wireguard_server_ip: "10.8.0.1"       # VPS WireGuard tunnel IP
 wireguard_client_ip: "10.8.0.2"       # edge node WireGuard tunnel IP (assigned to wg0 on Mini PC; Mikrotik routes traffic to it)
+wireguard_lan_cidr: "192.168.1.0/24"  # home LAN reachable by personal WireGuard clients through the edge node
 wireguard_port: 51820                 # VPS WireGuard ListenPort
 ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 

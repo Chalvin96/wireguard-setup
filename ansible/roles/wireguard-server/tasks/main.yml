@@ -31,6 +31,14 @@
     group: root
     force: false
 
+- name: Route home LAN through edge WireGuard peer
+  ansible.builtin.replace:
+    path: /etc/wireguard/wg0-peers.conf
+    regexp: >-
+      AllowedIPs = {{ wireguard_client_ip | regex_escape }}/32(?!,\s*{{ wireguard_lan_cidr | regex_escape }})
+    replace: "AllowedIPs = {{ wireguard_client_ip }}/32, {{ wireguard_lan_cidr }}"
+  notify: Restart wg-quick@wg0
+
 - name: Enable and start WireGuard
   ansible.builtin.systemd:
     name: wg-quick@wg0

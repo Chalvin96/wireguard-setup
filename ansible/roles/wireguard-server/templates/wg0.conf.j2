@@ -3,7 +3,12 @@ Address = {{ wireguard_server_ip }}/24
 ListenPort = {{ wireguard_port }}
 PrivateKey = {{ vault_wireguard_server_private_key }}
 
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE; wg addconf %i /etc/wireguard/wg0-peers.conf
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+PostUp = iptables -A FORWARD -i %i -j ACCEPT
+PostUp = iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+PostUp = ip route replace {{ wireguard_lan_cidr }} dev %i
+PostUp = wg addconf %i /etc/wireguard/wg0-peers.conf
+PostDown = iptables -D FORWARD -i %i -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+PostDown = ip route del {{ wireguard_lan_cidr }} dev %i || true
 {# iptables calls use the iptables-nft compatibility shim on modern Debian/Ubuntu (22.04+) #}
 {# Migration to native nftables PostUp is tracked as a future improvement #}

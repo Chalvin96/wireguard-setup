@@ -18,13 +18,37 @@ add interface=wg-to-vps \
 /ip/address
 add address=10.8.0.2/24 interface=wg-to-vps
 
-# Add route to VPS
+# Add route to VPS WireGuard IP
 /ip/route
 add dst-address=10.8.0.1/32 gateway=wg-to-vps
 
-# NAT for outgoing traffic
+# Let LAN devices reply to personal WireGuard clients without adding routes on
+# every LAN host. Replace 192.168.1.0/24 with your LAN CIDR.
 /ip/firewall/nat
-add chain=srcnat out-interface=wg-to-vps action=masquerade
+add chain=srcnat \
+    src-address=10.8.0.0/24 dst-address=192.168.1.0/24 \
+    action=masquerade comment="NAT WireGuard clients to LAN"
+
+# Allow personal WireGuard clients to reach the LAN.
+# Client addresses start at 10.8.0.3 because 10.8.0.1 is the VPS and
+# 10.8.0.2 is the edge/Mikrotik peer.
+/ip/firewall/filter
+add chain=forward \
+    src-address=10.8.0.3-10.8.0.254 dst-address=192.168.1.0/24 \
+    action=accept comment="Allow personal WireGuard clients to LAN"
+
+# Optional hardening: the VPS itself may only reach the edge HTTP/HTTPS service.
+# Replace LOCAL_SERVER_IP with the edge node LAN IP that Caddy listens on.
+/ip/firewall/filter
+add chain=forward \
+    src-address=10.8.0.1 dst-address=LOCAL_SERVER_IP \
+    protocol=tcp dst-port=80,443 \
+    action=accept comment="Allow VPS to edge HTTP and HTTPS"
+
+/ip/firewall/filter
+add chain=forward \
+    src-address=10.8.0.1 dst-address=192.168.1.0/24 \
+    action=drop comment="Block VPS from the rest of LAN"
 
 # Forward HTTP/HTTPS to local server
 /ip/firewall/nat
@@ -36,4 +60,3 @@ add chain=dstnat in-interface=wg-to-vps \
 add chain=dstnat in-interface=wg-to-vps \
     protocol=tcp dst-port=443 \
     action=dst-nat to-addresses=LOCAL_SERVER_IP to-ports=443
-

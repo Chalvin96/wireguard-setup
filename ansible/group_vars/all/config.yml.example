@@ -24,13 +24,20 @@ fail2ban_findtime: 60
 loki_port: 3100
 prometheus_port: 9090
 grafana_port: 3000
+glitchtip_port: 8000
 node_exporter_port: 9100
 grafana_disk_alert_threshold: 80      # percent
+glitchtip_domain: "https://glitchtip.example.com"
+glitchtip_enable_admin: false
+glitchtip_enable_openapi: false
 
 # ── Image versions (pinned — change intentionally to upgrade) ──────────────────
 loki_image: "grafana/loki:3.1.0"
 prometheus_image: "prom/prometheus:v2.53.0"
 grafana_image: "grafana/grafana:11.1.0"
+glitchtip_image: "glitchtip/glitchtip:6.2.0"
+glitchtip_postgres_image: "postgres:18.4"
+glitchtip_valkey_image: "valkey/valkey:9.0.4"
 
 # ── CrowdSec ───────────────────────────────────────────────────────────────────
 crowdsec_lapi_port: 8080

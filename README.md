@@ -5,8 +5,8 @@
 A single-command Ansible project that provisions a hardened 3-node homelab:
 **WireGuard** tunneling, **HAProxy** TCP forwarding with PROXY Protocol v2,
 **CrowdSec** threat detection + 13 proactive blocklist feeds, **fail2ban** SSH
-defense, **Caddy** TLS reverse proxy, and a full **Loki → Prometheus → Grafana**
-observability pipeline.
+defense, **Caddy** TLS reverse proxy, a full **Loki → Prometheus → Grafana**
+observability pipeline, and **GlitchTip** for app errors, traces, and uptime.
 
 > Replaces the old root-level shell scripts. The Ansible roles are now the single
 > source of truth (idempotent, vault-encrypted, lint-clean).
@@ -44,6 +44,7 @@ flowchart TD
         LOKI["Loki"]
         PROME["Prometheus"]
         GRAF["Grafana · Discord alerts"]
+        GLT["GlitchTip"]
     end
 
     %% ── data plane ──
@@ -66,6 +67,7 @@ flowchart TD
     CAD -.->|"/metrics"| PROME
     PROME ==> GRAF
     LOKI ==> GRAF
+    GLT -.->|"events / traces / uptime"| GRAF
 
     classDef ext fill:#f6f8fa,stroke:#8c959f,color:#24292f;
 ```
@@ -139,13 +141,18 @@ SSH-only, incremental banning via `nftables[type=allports]`:
 
 ## Observability
 
-`Promtail → Loki → Prometheus → Grafana` on the Monitoring VM (Docker Compose):
+`Promtail → Loki → Prometheus → Grafana`, plus `GlitchTip`, on the Monitoring VM
+(Docker Compose):
 
 - **Promtail** ships Caddy + fail2ban logs from the edge to **Loki**.
 - **Prometheus** scrapes Caddy's `/metrics` endpoint (admin API bound to the LAN
   IP, restricted to the Monitoring VM by nftables).
 - **Grafana** ships with a provisioned homelab dashboard + a Discord alert when
   disk usage crosses the threshold.
+- **GlitchTip** runs self-hosted with its own Postgres + Valkey services and
+  exposes the Sentry-compatible UI on `glitchtip_port` (default `8000`). Set
+  `glitchtip_domain` to the URL you actually serve, either through your reverse
+  proxy or directly as `http://<monitoring_ip>:8000`.
 - All Docker ports bind to `monitoring_ip` (never `0.0.0.0`).
 
 ## Prerequisites
@@ -226,6 +233,10 @@ for the full list. Highlights:
 | `vault_vps_ban_ssh_public_key` | Public half (installed in banagent `authorized_keys`) |
 | `vault_grafana_admin_user` / `..._password` | Grafana admin credentials |
 | `vault_grafana_discord_webhook` | Discord webhook for disk alerts |
+| `vault_glitchtip_secret_key` | Django secret key for the GlitchTip instance |
+| `vault_glitchtip_postgres_password` | URL-safe PostgreSQL password for GlitchTip |
+| `vault_glitchtip_email_url` | SMTP or `consolemail://` transport for GlitchTip mail |
+| `vault_glitchtip_default_from_email` | Sender address used by GlitchTip |
 | `vault_crowdsec_vps_bouncer_key` | Pre-shared key for the VPS CrowdSec bouncer |
 | `vault_crowdsec_edge_bouncer_key` | Pre-shared key for the edge CrowdSec bouncer |
 | `vault_crowdsec_machine_password` | Password for the blocklist-import machine account |

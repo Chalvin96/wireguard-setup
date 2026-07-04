@@ -14,6 +14,10 @@ vault_vps_ban_ssh_public_key: "changeme-ssh-ed25519 AAAA... fail2ban-ban-ip"  # 
 vault_grafana_admin_user: "changeme-admin-username"
 vault_grafana_admin_password: "changeme-strong-password"
 vault_grafana_discord_webhook: "https://discord.com/api/webhooks/changeme"
+vault_glitchtip_secret_key: "changeme-openssl-rand-hex-32"
+vault_glitchtip_postgres_password: "changeme-url-safe-postgres-password"
+vault_glitchtip_email_url: "consolemail://"
+vault_glitchtip_default_from_email: "glitchtip@example.com"
 
 # ── Caddy / Cloudflare DNS-01 ──────────────────────────────────────────────────
 # Create a Cloudflare API token with Zone:DNS:Edit for the hosted zone.

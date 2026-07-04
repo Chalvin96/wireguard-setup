@@ -40,3 +40,43 @@ services:
     depends_on:
       - loki
       - prometheus
+
+  glitchtip-postgres:
+    image: {{ glitchtip_postgres_image }}
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: "{{ vault_glitchtip_postgres_password }}"
+    volumes:
+      - glitchtip-postgres-data:/var/lib/postgresql
+
+  glitchtip-valkey:
+    image: {{ glitchtip_valkey_image }}
+    restart: unless-stopped
+    volumes:
+      - glitchtip-valkey-data:/data
+
+  glitchtip:
+    image: {{ glitchtip_image }}
+    restart: unless-stopped
+    depends_on:
+      - glitchtip-postgres
+      - glitchtip-valkey
+    environment:
+      DATABASE_URL: "postgres://postgres:{{ vault_glitchtip_postgres_password }}@glitchtip-postgres:5432/postgres"
+      VALKEY_URL: redis://glitchtip-valkey:6379
+      SECRET_KEY: "{{ vault_glitchtip_secret_key }}"
+      EMAIL_URL: "{{ vault_glitchtip_email_url }}"
+      GLITCHTIP_DOMAIN: "{{ glitchtip_domain }}"
+      DEFAULT_FROM_EMAIL: "{{ vault_glitchtip_default_from_email }}"
+      ENABLE_ADMIN: "{{ glitchtip_enable_admin | ternary('True', 'False') }}"
+      ENABLE_OPENAPI: "{{ glitchtip_enable_openapi | ternary('True', 'False') }}"
+      SERVER_ROLE: all_in_one
+    ports:
+      - "{{ monitoring_ip }}:{{ glitchtip_port }}:8000"
+    volumes:
+      - glitchtip-uploads:/code/uploads
+
+volumes:
+  glitchtip-postgres-data:
+  glitchtip-valkey-data:
+  glitchtip-uploads:

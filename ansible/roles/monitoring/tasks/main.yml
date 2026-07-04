@@ -106,6 +106,18 @@
     mode: "0755"
 
 # ── Config files ───────────────────────────────────────────────────────────────
+- name: Validate app backend metrics settings
+  ansible.builtin.assert:
+    that:
+      - vault_app_metrics_token is defined
+      - vault_app_metrics_token | length > 0
+      - app_backend_metrics_targets is defined
+      - app_backend_metrics_targets | length > 0
+    fail_msg: >-
+      Set vault_app_metrics_token and at least one app_backend_metrics_targets
+      entry when app_backend_metrics_enabled is true.
+  when: app_backend_metrics_enabled | default(false)
+
 - name: Write docker-compose.yml
   ansible.builtin.template:
     src: docker-compose.yml.j2
@@ -125,6 +137,23 @@
     src: prometheus.yml.j2
     dest: /opt/monitoring/prometheus.yml
     mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Write app metrics bearer token
+  ansible.builtin.copy:
+    content: "{{ vault_app_metrics_token }}"
+    dest: /opt/monitoring/app-metrics-token
+    owner: "65534"
+    group: "65534"
+    mode: "0400"
+  when: app_backend_metrics_enabled | default(false)
+  notify: Restart monitoring stack
+
+- name: Remove app metrics bearer token when disabled
+  ansible.builtin.file:
+    path: /opt/monitoring/app-metrics-token
+    state: absent
+  when: not (app_backend_metrics_enabled | default(false))
   notify: Restart monitoring stack
 
 # ── Grafana provisioning ───────────────────────────────────────────────────────

@@ -13,3 +13,17 @@ scrape_configs:
     static_configs:
       - targets:
           - "host-gateway:{{ node_exporter_port }}"
+
+{% if app_backend_metrics_enabled | default(false) %}
+  - job_name: app-backend
+    metrics_path: "{{ app_backend_metrics_path | default('/metrics') }}"
+    scheme: "{{ app_backend_metrics_scheme | default('https') }}"
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/app-metrics-token
+    static_configs:
+      - targets:
+{% for target in app_backend_metrics_targets | default([]) %}
+          - "{{ target }}"
+{% endfor %}
+{% endif %}

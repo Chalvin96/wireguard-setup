@@ -32,6 +32,18 @@ glitchtip_domain: "https://glitchtip.example.com"
 glitchtip_enable_admin: false
 glitchtip_enable_openapi: false
 
+# App observability. Enable after the backend exposes token-gated metrics.
+app_backend_metrics_enabled: false
+app_backend_metrics_scheme: "https"
+app_backend_metrics_path: "/metrics"
+app_backend_metrics_targets:
+  - "app.example.com"
+
+# Enable only on hosts where Promtail can read app container logs.
+app_promtail_enabled: false
+app_promtail_log_paths:
+  - "/var/lib/docker/containers/REPLACE_WITH_APP_CONTAINER_ID/*-json.log"
+
 # ── Image versions (pinned — change intentionally to upgrade) ──────────────────
 loki_image: "grafana/loki:3.1.0"
 prometheus_image: "prom/prometheus:v2.53.0"

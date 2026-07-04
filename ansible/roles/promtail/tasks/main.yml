@@ -53,6 +53,56 @@
     append: true
   notify: Restart Promtail
 
+- name: Install ACL support for app container logs
+  ansible.builtin.apt:
+    name: acl
+    state: present
+    update_cache: true
+  when: app_promtail_enabled | default(false)
+
+- name: Validate app container log settings
+  ansible.builtin.assert:
+    that:
+      - app_promtail_log_paths is defined
+      - app_promtail_log_paths | length > 0
+    fail_msg: >-
+      Set at least one app_promtail_log_paths entry when app_promtail_enabled
+      is true.
+  when: app_promtail_enabled | default(false)
+
+- name: Allow promtail to traverse Docker data directory
+  ansible.posix.acl:
+    path: /var/lib/docker
+    entity: promtail
+    etype: user
+    permissions: x
+    state: present
+  when: app_promtail_enabled | default(false)
+  notify: Restart Promtail
+
+- name: Allow promtail to read existing app container logs
+  ansible.posix.acl:
+    path: /var/lib/docker/containers
+    entity: promtail
+    etype: user
+    permissions: rX
+    state: present
+    recursive: true
+  when: app_promtail_enabled | default(false)
+  notify: Restart Promtail
+
+- name: Allow promtail to read new app container logs
+  ansible.posix.acl:
+    path: /var/lib/docker/containers
+    entity: promtail
+    etype: user
+    permissions: rX
+    default: true
+    state: present
+    recursive: true
+  when: app_promtail_enabled | default(false)
+  notify: Restart Promtail
+
 - name: Enable and start Promtail
   ansible.builtin.systemd:
     name: promtail

@@ -17,6 +17,9 @@ services:
       - "host-gateway:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+{% if app_backend_metrics_enabled | default(false) %}
+      - ./app-metrics-token:/etc/prometheus/app-metrics-token:ro
+{% endif %}
       - ./prometheus-data:/prometheus
     ports:
       - "{{ monitoring_ip }}:{{ prometheus_port }}:9090"

@@ -25,6 +25,12 @@ Relevant monitoring variables now include:
 | `glitchtip_domain` | Public GlitchTip URL, including scheme |
 | `glitchtip_enable_admin` | Enables Django admin when `true` |
 | `glitchtip_enable_openapi` | Enables OpenAPI docs when `true` |
+| `app_backend_metrics_enabled` | Enables Prometheus scraping for the app backend |
+| `app_backend_metrics_scheme` | Scheme used to scrape app backend metrics |
+| `app_backend_metrics_path` | Metrics path exposed by the app backend |
+| `app_backend_metrics_targets` | App backend Prometheus targets, including host and optional port |
+| `app_promtail_enabled` | Enables app container log scraping on Promtail hosts |
+| `app_promtail_log_paths` | App container JSON log globs readable by Promtail; keep these scoped to the app containers |
 
 Set `glitchtip_domain` to the URL clients will use for GlitchTip. If there is
 no reverse proxy route yet, use `http://<monitoring_ip>:8000`.
@@ -45,3 +51,4 @@ GlitchTip adds:
 | `vault_glitchtip_postgres_password` | URL-safe PostgreSQL password |
 | `vault_glitchtip_email_url` | Mail transport, or `consolemail://` |
 | `vault_glitchtip_default_from_email` | Sender address for outbound mail |
+| `vault_app_metrics_token` | Bearer token used by Prometheus to scrape app `/metrics` |

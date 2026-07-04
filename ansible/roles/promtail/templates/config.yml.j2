@@ -41,3 +41,23 @@ scrape_configs:
           job: fail2ban
           host: "{{ inventory_hostname }}"
           __path__: /var/log/fail2ban.log
+
+{% if app_promtail_enabled | default(false) %}
+  - job_name: app
+    static_configs:
+{% for log_path in app_promtail_log_paths | default([]) %}
+      - targets:
+          - localhost
+        labels:
+          job: app
+          host: "{{ inventory_hostname }}"
+          __path__: "{{ log_path }}"
+{% endfor %}
+    pipeline_stages:
+      - docker: {}
+      - json:
+          expressions:
+            level: level
+      - labels:
+          level:
+{% endif %}

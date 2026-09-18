@@ -234,6 +234,7 @@ for the full list. Highlights:
 | `vault_wireguard_server_private_key` | WireGuard server private key |
 | `vault_wireguard_server_public_key` | Server public key (distributed to clients) |
 | `vault_wireguard_client_private_key` | Mikrotik WireGuard private key (used on first provisioning) |
+| `vault_wireguard_client_public_key` | Mikrotik WireGuard public key (asserted by the verify task) |
 | `vault_vps_ban_ssh_private_key` | Key for the emergency `banagent` command |
 | `vault_vps_ban_ssh_public_key` | Public half (installed in banagent `authorized_keys`) |
 | `vault_grafana_admin_user` / `..._password` | Grafana admin credentials |

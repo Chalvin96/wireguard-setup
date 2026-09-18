@@ -15,7 +15,6 @@ mikrotik_peer_allowed_addresses: "10.8.0.1/32,10.8.0.3/32"  # source IPs the VPS
 mikrotik_watchdog_interval: "2m"              # tunnel health-check cadence
 mikrotik_watchdog_cooldown: "60s"             # disable window so stale CGNAT NAT mappings expire
 
-
 # ── HAProxy ────────────────────────────────────────────────────────────────────
 haproxy_http_port: 80
 haproxy_https_port: 443

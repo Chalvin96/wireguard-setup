@@ -11,7 +11,8 @@
 
 - name: Verify WireGuard interface and peer exist
   ansible.builtin.raw: >-
-    :if ([/interface/wireguard find name="{{ mikrotik_wireguard_interface }}"] != ""
+    :if ([/interface/wireguard get [find name="{{ mikrotik_wireguard_interface }}"] public-key] =
+    "{{ vault_wireguard_client_public_key }}"
     and [/interface/wireguard/peers find interface="{{ mikrotik_wireguard_interface }}"
     public-key="{{ vault_wireguard_server_public_key }}"] != "")
     do={:put "WG-VERIFY-OK"} else={:put "WG-VERIFY-FAIL"}

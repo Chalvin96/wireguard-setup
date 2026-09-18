@@ -12,7 +12,9 @@ safe to re-run. It needs:
   1. SSH access: import your pubkey once on the router
        /user/ssh-keys/import user=admin public-key-file=<your-key>.pub
      (upload the file first, e.g. via Winbox file list or scp)
-  2. `vault_wireguard_client_private_key` in ansible/group_vars/all/vault.yml
+  2. `vault_wireguard_client_private_key` and
+     `vault_wireguard_client_public_key` in ansible/group_vars/all/vault.yml
+     (the verify task asserts the interface key matches the public key)
   3. The `mikrotik_*` variables from ansible/group_vars/all/config.yml.example
      copied into your config.yml
 
@@ -23,7 +25,9 @@ three probes fail it disables the interface for 60s, requests a random port
 (`listen-port=0`), and re-enables. This may help recover stale NAT mappings,
 but neither a different external port nor recovery is guaranteed. ICMP
 filtering can trigger unnecessary resets. Ordinary reconnects do not rotate
-the port. The role reports changed on every apply; it does not compute a diff.
+the port. A `site.yml` run enforces enabled state: a manually disabled
+`wg-to-vps` interface or `wg-watchdog` scheduler is re-enabled on the next
+run. The role reports changed on every apply; it does not compute a diff.
 
 The rules below are intentionally NOT managed by Ansible — firewall and NAT
 policy are site-specific. Reference for a new site (assumes the edge peer is

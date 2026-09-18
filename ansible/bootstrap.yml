@@ -3,7 +3,7 @@
 # ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
 # Prerequisites: ansible-galaxy collection install -r requirements.yml
 - name: Bootstrap deploy user
-  hosts: all
+  hosts: 'all:!mikrotik'
   gather_facts: false
   become: true
   vars:

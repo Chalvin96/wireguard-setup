@@ -16,6 +16,12 @@
     - fail2ban
     - crowdsec
 
+- name: Mikrotik — WireGuard tunnel and CGNAT watchdog
+  hosts: mikrotik
+  gather_facts: false
+  roles:
+    - mikrotik-wireguard
+
 - name: Edge — reverse proxy + security stack
   hosts: edge
   become: true

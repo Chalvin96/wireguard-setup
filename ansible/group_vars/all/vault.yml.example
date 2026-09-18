@@ -2,6 +2,8 @@
 # ── WireGuard ──────────────────────────────────────────────────────────────────
 vault_wireguard_server_private_key: "changeme-generate-with-wg-genkey"
 vault_wireguard_server_public_key: "changeme-generate-with-wg-pubkey"  # server's public key (distributed to clients)
+vault_wireguard_client_private_key: "changeme-generate-with-wg-genkey"  # Mikrotik WireGuard private key (used on first provisioning)
+vault_wireguard_client_public_key: "changeme-generate-with-wg-pubkey"  # Mikrotik WireGuard public key (asserted by the verify task)
 
 # ── fail2ban / vps-blocklist ───────────────────────────────────────────────────
 vault_vps_ban_ssh_private_key: |

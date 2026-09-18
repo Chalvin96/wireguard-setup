@@ -12,6 +12,7 @@
   roles:
     - wireguard-server
     - haproxy
+    - vps-firewall
     - vps-blocklist
     - fail2ban
     - crowdsec

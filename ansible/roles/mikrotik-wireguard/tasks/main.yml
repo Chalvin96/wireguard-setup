@@ -1,0 +1,20 @@
+---
+- name: Apply WireGuard tunnel and CGNAT watchdog
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'mikrotik-wireguard.rsc.j2') | replace('\n', ' ') | trim }}"
+  register: mikrotik_wg_apply
+  changed_when: true
+  failed_when: >-
+    mikrotik_wg_apply.stdout is not search('MIKROTIK-WIREGUARD-OK')
+    or mikrotik_wg_apply.stdout is search('expected end of command|failure:|bad command|no such item')
+    or mikrotik_wg_apply.stderr is search('expected end of command|failure:|bad command|no such item')
+  no_log: true
+
+- name: Verify WireGuard interface and peer exist
+  ansible.builtin.raw: >-
+    :if ([/interface/wireguard find name="{{ mikrotik_wireguard_interface }}"] != ""
+    and [/interface/wireguard/peers find interface="{{ mikrotik_wireguard_interface }}"
+    public-key="{{ vault_wireguard_server_public_key }}"] != "")
+    do={:put "WG-VERIFY-OK"} else={:put "WG-VERIFY-FAIL"}
+  register: mikrotik_wg_verify
+  changed_when: false
+  failed_when: mikrotik_wg_verify.stdout is not search('WG-VERIFY-OK')

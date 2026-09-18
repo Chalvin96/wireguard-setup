@@ -1,26 +1,33 @@
-# this assume client is 10.8.0.2
+Mikrotik / RouterOS — site-specific manual configuration
+=========================================================
 
-/interface/wireguard
-add listen-port=51820 name=wg-to-vps
+The WireGuard tunnel itself (interface, peer, address, route, and the CGNAT
+self-healing watchdog) is provisioned automatically by the Ansible role:
 
-/interface/wireguard
-set wg-to-vps private-key="<CLIENT_PRIVATE_KEY_FROM_VPS>"
+    ansible/roles/mikrotik-wireguard/
 
-# Add VPS peer
-/interface/wireguard/peers
-add interface=wg-to-vps \
-    public-key="<SERVER_PUBLIC_KEY>" \
-    endpoint="<VPS_PUBLIC_IP>:<VPS_PORT>" \
-    allowed-addresses=10.8.0.0/24 \
-    persistent-keepalive=25
+It runs via `ansible/site.yml` (hosts group `mikrotik`) and is idempotent —
+safe to re-run. It needs:
 
-# Assign IP address
-/ip/address
-add address=10.8.0.2/24 interface=wg-to-vps
+  1. SSH access: import your pubkey once on the router
+       /user/ssh-keys/import user=admin public-key-file=<your-key>.pub
+     (upload the file first, e.g. via Winbox file list or scp)
+  2. `vault_wireguard_client_private_key` in ansible/group_vars/all/vault.yml
+  3. The `mikrotik_*` variables from ansible/group_vars/all/config.yml.example
+     copied into your config.yml
 
-# Add route to VPS WireGuard IP
-/ip/route
-add dst-address=10.8.0.1/32 gateway=wg-to-vps
+Design note: the role leaves the interface listen-port unchanged on existing
+routers and uses the RouterOS default when creating an interface. The
+`wg-watchdog` scheduler (default: every 2m) pings the VPS tunnel IP; when all
+three probes fail it disables the interface for 60s, requests a random port
+(`listen-port=0`), and re-enables. This may help recover stale NAT mappings,
+but neither a different external port nor recovery is guaranteed. ICMP
+filtering can trigger unnecessary resets. Ordinary reconnects do not rotate
+the port. The role reports changed on every apply; it does not compute a diff.
+
+The rules below are intentionally NOT managed by Ansible — firewall and NAT
+policy are site-specific. Reference for a new site (assumes the edge peer is
+10.8.0.2, personal clients start at 10.8.0.3):
 
 # Let LAN devices reply to personal WireGuard clients without adding routes on
 # every LAN host. Replace 192.168.1.0/24 with your LAN CIDR.
@@ -30,8 +37,6 @@ add chain=srcnat \
     action=masquerade comment="NAT WireGuard clients to LAN"
 
 # Allow personal WireGuard clients to reach the LAN.
-# Client addresses start at 10.8.0.3 because 10.8.0.1 is the VPS and
-# 10.8.0.2 is the edge/Mikrotik peer.
 /ip/firewall/filter
 add chain=forward \
     src-address=10.8.0.3-10.8.0.254 dst-address=192.168.1.0/24 \

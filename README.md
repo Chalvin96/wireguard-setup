@@ -27,7 +27,7 @@ flowchart TD
         BL1["nftables blocklist"]
     end
 
-    MIK(("Mikrotik<br/>RouterOS · manual")):::ext
+    MIK(("Mikrotik<br/>RouterOS · Ansible over SSH"))
 
     subgraph EDGE["Mini PC · edge-01 · LAN"]
         CAD["Caddy<br/>unwrap PROXY v2 · TLS · JSON logs"]
@@ -80,8 +80,9 @@ outside Ansible's control.
 1. A request hits the **VPS** on `:80/:443`. **HAProxy** terminates the TCP
    connection, applies a per-IP rate limit, then forwards over the **WireGuard**
    tunnel prepended with PROXY Protocol v2 (so the real client IP survives).
-2. The **Mikrotik** router (configured manually — RouterOS has no Ansible module)
-   routes the tunnel traffic to the **Mini PC**.
+2. The **Mikrotik** router (provisioned by the `mikrotik-wireguard` role over
+   SSH — agentless, no Python on the router) routes the tunnel traffic to the
+   **Mini PC**.
 3. **Caddy** on the Mini PC unwraps PROXY Protocol v2, terminates TLS, and
    reverse-proxies to your backend.
 4. In parallel, **CrowdSec** reads Caddy's JSON access log, and **Promtail**
@@ -160,7 +161,9 @@ SSH-only, incremental banning via `nftables[type=allports]`:
 - Ansible 2.14+ and `ansible-lint` on your laptop
 - Required collections: `ansible-galaxy collection install -r ansible/requirements.yml`
 - Three nodes (VPS + Mini PC + Monitoring VM) on Debian/Ubuntu
-- Mikrotik set up manually — see [`routeros-wireguard-setup.txt`](routeros-wireguard-setup.txt)
+- Mikrotik (RouterOS 7) reachable over SSH with your pubkey — one-time
+  `/user ssh-keys import` (see [`routeros-wireguard-setup.txt`](routeros-wireguard-setup.txt));
+  `site.yml` then provisions the tunnel + CGNAT watchdog
 
 ## Quick Start
 
@@ -201,7 +204,7 @@ ansible-playbook ansible/unban.yml
 
 ```
 ansible/
-├── site.yml              # deploy all roles in order (ingress / edge / monitoring)
+├── site.yml              # deploy all roles in order (ingress / mikrotik / edge / monitoring)
 ├── add-client.yml        # add WireGuard peer → writes client.conf locally
 ├── bootstrap.yml         # one-time: create deploy user + install SSH key
 ├── unban.yml             # manual unban (prompts for IP)
@@ -211,6 +214,7 @@ ansible/
     └── vault.yml           # Ansible Vault encrypted secrets
 roles/
 ├── wireguard-server/    # ingress-01: WG server + peer mgmt (wg0 + wg0-peers.conf)
+├── mikrotik-wireguard/  # mikrotik-01: RouterOS WG tunnel + CGNAT watchdog (raw SSH)
 ├── haproxy/             # ingress-01: TCP forward + PROXY v2 + rate limiting
 ├── vps-blocklist/       # ingress-01: nftables blocklist + banagent ban-ip tool
 ├── fail2ban/            # both nodes: SSH incremental banning via nftables
@@ -229,6 +233,7 @@ for the full list. Highlights:
 |----------|---------|
 | `vault_wireguard_server_private_key` | WireGuard server private key |
 | `vault_wireguard_server_public_key` | Server public key (distributed to clients) |
+| `vault_wireguard_client_private_key` | Mikrotik WireGuard private key (used on first provisioning) |
 | `vault_vps_ban_ssh_private_key` | Key for the emergency `banagent` command |
 | `vault_vps_ban_ssh_public_key` | Public half (installed in banagent `authorized_keys`) |
 | `vault_grafana_admin_user` / `..._password` | Grafana admin credentials |
@@ -245,7 +250,7 @@ for the full list. Highlights:
 
 | Area | Implementation |
 |------|----------------|
-| Infrastructure as Code | Idempotent Ansible roles, inventory groups, FQCN modules |
+| Infrastructure as Code | Idempotent Ansible roles, inventory groups, FQCN modules, agentless RouterOS provisioning |
 | Networking | WireGuard VPN, HAProxy TCP mode, PROXY Protocol v2, nftables |
 | Security | CrowdSec detection, proactive blocklist feeds, fail2ban, Ansible Vault |
 | Threat intelligence | 13-feed blocklist-import, CrowdSec Hub scenarios |

@@ -8,6 +8,14 @@ ingress_ip: "1.2.3.4"                # ingress node (VPS) public internet IP
 edge_ip: "192.168.1.x"              # edge node LAN IP (Caddy admin bind + firewall)
 monitoring_ip: "192.168.1.x"        # monitoring node LAN IP (Prometheus scrape source)
 
+# ── Mikrotik (RouterOS over SSH) ────────────────────────────────────────────────
+mikrotik_wireguard_interface: "wg-to-vps"     # RouterOS WireGuard interface name
+mikrotik_wireguard_mtu: 1420                  # MTU adjusted for WireGuard overhead
+mikrotik_peer_allowed_addresses: "10.8.0.1/32,10.8.0.3/32"  # source IPs the VPS may use inside the tunnel
+mikrotik_watchdog_interval: "2m"              # tunnel health-check cadence
+mikrotik_watchdog_cooldown: "60s"             # disable window so stale CGNAT NAT mappings expire
+
+
 # ── HAProxy ────────────────────────────────────────────────────────────────────
 haproxy_http_port: 80
 haproxy_https_port: 443

@@ -15,3 +15,11 @@ all:
       hosts:
         monitoring-01:
           ansible_host: 192.168.1.x      # replace with monitoring node LAN IP
+    mikrotik:
+      vars:
+        ansible_user: admin            # RouterOS user (key-based SSH, no agent)
+        ansible_ssh_use_tty: false     # RouterOS drops into interactive mode with -tt
+        ansible_ssh_common_args: "-o ControlMaster=no -o ControlPersist=no -o BatchMode=yes"
+      hosts:
+        mikrotik-01:
+          ansible_host: 192.168.1.1      # replace with router LAN IP

@@ -1,0 +1,38 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+
+- name: Rate-limit new SSH connections
+  ansible.builtin.command: ufw limit {{ ansible_port | default(22) }}/tcp
+  register: ufw_rule_ssh
+  changed_when: "'Rule added' in ufw_rule_ssh.stdout"
+
+- name: Allow HAProxy HTTP and HTTPS
+  ansible.builtin.command: ufw allow {{ item }}/tcp
+  register: ufw_rule_http
+  changed_when: "'Rule added' in ufw_rule_http.stdout"
+  loop:
+    - "{{ haproxy_http_port }}"
+    - "{{ haproxy_https_port }}"
+
+- name: Allow WireGuard UDP
+  ansible.builtin.command: ufw allow {{ wireguard_port }}/udp
+  register: ufw_rule_wg
+  changed_when: "'Rule added' in ufw_rule_wg.stdout"
+
+- name: Default deny incoming
+  ansible.builtin.command: ufw default deny incoming
+  register: ufw_default
+  changed_when: "'Default incoming policy changed' in ufw_default.stdout"
+
+- name: Check ufw state
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+
+- name: Enable ufw
+  ansible.builtin.command: ufw --force enable
+  when: "'Status: active' not in ufw_status.stdout"

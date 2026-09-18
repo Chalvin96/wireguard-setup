@@ -10,6 +10,7 @@
   roles:
     - { role: wireguard-server, tags: [wireguard-server] }
     - { role: haproxy, tags: [haproxy] }
+    - { role: vps-firewall, tags: [vps-firewall] }
     - { role: vps-blocklist, tags: [vps-blocklist] }
     - { role: fail2ban, tags: [fail2ban] }
     - { role: crowdsec, tags: [crowdsec] }

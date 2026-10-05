@@ -62,6 +62,7 @@
   loop: "{{ github_runner_repos }}"
   loop_control:
     label: "{{ item.owner }}/{{ item.repo }}"
+  when: not ansible_check_mode   # unit/file is only created in a real run
 
 # The upstream script apt-installs the .NET runtime libraries; it is
 # idempotent, so it is not reported as a change.
@@ -70,6 +71,7 @@
   args:
     chdir: "{{ github_runner_home }}/{{ github_runner_repos[0].repo }}"
   changed_when: false
+  when: github_runner_repos | length > 0
 
 - name: Check which instances are already registered
   ansible.builtin.stat:
@@ -103,8 +105,6 @@
       - --replace
       - --url
       - "https://github.com/{{ item.item.item.owner }}/{{ item.item.item.repo }}"
-      - --token
-      - "{{ item.json.token }}"
       - --name
       - "{{ inventory_hostname }}-{{ item.item.item.repo }}"
       - --labels
@@ -113,6 +113,10 @@
       - _work
     chdir: "{{ github_runner_home }}/{{ item.item.item.repo }}"
     creates: "{{ github_runner_home }}/{{ item.item.item.repo }}/.runner"
+  # The runner reads ACTIONS_RUNNER_INPUT_<ARG>; keeping the token out of argv
+  # keeps it out of /proc/*/cmdline for other local users.
+  environment:
+    ACTIONS_RUNNER_INPUT_TOKEN: "{{ item.json.token }}"
   become: true
   become_user: "{{ github_runner_user }}"
   loop: "{{ github_runner_tokens.results }}"
@@ -140,3 +144,4 @@
   loop: "{{ github_runner_repos }}"
   loop_control:
     label: "{{ item.owner }}/{{ item.repo }}"
+  when: not ansible_check_mode   # unit/file is only created in a real run

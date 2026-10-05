@@ -6,8 +6,8 @@ Requires=mailrise-firewall.service
 After=network-online.target mailrise-firewall.service
 
 [Service]
-DynamicUser=true
-SupplementaryGroups=mailrise
+User=mailrise
+Group=mailrise
 ExecStart=/opt/mailrise/venv/bin/mailrise /etc/mailrise.conf
 Restart=on-failure
 RestartSec=5

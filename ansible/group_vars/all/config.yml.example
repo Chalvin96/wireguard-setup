@@ -78,6 +78,7 @@ crowdsec_blocklist_interval: "86400"
 # Channel names are the keys of vault_notify_discord_webhooks.
 notify_mailrise_version: "1.4.0"        # PyPI release installed into /opt/mailrise/venv
 notify_port: 8025
+notify_mail_domain: "mailrise.lan"     # senders mail <channel>@<this domain>
 
 # ── Tools VM: Docker ──────────────────────────────────────────────────────────
 docker_log_max_size: "10m"
@@ -96,6 +97,7 @@ penpot_flags: "disable-email-verification enable-prepl-server disable-secure-ses
 penpot_dir: "/srv/penpot"             # /srv = HDD data disk, mounted when the VM is created
 penpot_backup_dir: "/srv/backups/penpot"
 penpot_backup_keep_days: 7
+penpot_backup_alert_recipient: "alerts@mailrise.lan"   # Mailrise channel for failed backups
 
 # ── Tools VM: GitHub Actions runners (PRIVATE repositories only) ──────────────
 github_runner_version: "2.337.0"

@@ -11,23 +11,42 @@
   ansible.builtin.apt:
     name:
       - python3-venv
+      - python3-packaging   # required by ansible.builtin.pip on the target
       - nftables
     state: present
     update_cache: true
 
+- name: Check for an existing Mailrise venv
+  ansible.builtin.stat:
+    path: /opt/mailrise/venv/bin/mailrise
+  register: notify_venv
+
+# In check mode on a fresh host the apt step above has not really installed
+# python3-packaging, which the pip module needs; preview it once the venv exists.
 - name: Install pinned Mailrise into its own venv
   ansible.builtin.pip:
     name: "mailrise=={{ notify_mailrise_version }}"
     virtualenv: /opt/mailrise/venv
     virtualenv_command: python3 -m venv
+  when: not ansible_check_mode or notify_venv.stat.exists
   notify: Restart mailrise
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-# Readable only by root and the service group; holds the Discord webhooks.
+# Static system account: readable access to the config via its group. (A
+# DynamicUser= unit would claim the same name and collide with this group.)
 - name: Create mailrise system group
   ansible.builtin.group:
     name: mailrise
     system: true
+
+- name: Create mailrise system user
+  ansible.builtin.user:
+    name: mailrise
+    group: mailrise
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
 
 - name: Write /etc/mailrise.conf (webhooks from vault)
   ansible.builtin.template:
@@ -37,6 +56,7 @@
     group: mailrise
     mode: "0640"
   no_log: true
+  diff: false
   notify: Restart mailrise
 
 - name: Write mailrise systemd unit
@@ -72,11 +92,22 @@
     mode: "0644"
   notify: Apply mailrise firewall
 
+# Other roles on this host reload the global nftables service, which runs
+# /etc/nftables.conf (`flush ruleset` on Debian). Including the table there makes
+# every such reload re-create it. Deliberately no reload is triggered here.
+- name: Include mailrise table in /etc/nftables.conf
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/mailrise.nft"'
+    state: present
+  when: not ansible_check_mode   # file comes from the nftables package
+
 - name: Enable mailrise-firewall
   ansible.builtin.systemd:
     name: mailrise-firewall
     enabled: true
     daemon_reload: true
+  when: not ansible_check_mode   # unit/file is only created in a real run
 
 - name: Flush handlers so the firewall rule and unit are current
   ansible.builtin.meta: flush_handlers
@@ -88,3 +119,12 @@
     enabled: true
     state: started
     daemon_reload: true
+  when: not ansible_check_mode   # unit/file is only created in a real run
+
+# systemd reports "started" even if the process exits a moment later.
+- name: Verify Mailrise is accepting SMTP
+  ansible.builtin.wait_for:
+    host: "{{ edge_ip }}"
+    port: "{{ notify_port }}"
+    timeout: 30
+  when: not ansible_check_mode

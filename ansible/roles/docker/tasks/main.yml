@@ -30,6 +30,7 @@
   ansible.builtin.command: dpkg --print-architecture
   register: docker_dpkg_arch
   changed_when: false
+  check_mode: false               # read-only; needed to render the repo line in check mode
 
 - name: Add Docker apt repository
   ansible.builtin.apt_repository:
@@ -53,6 +54,12 @@
     state: present
 
 # ── Daemon config ──────────────────────────────────────────────────────────────
+- name: Ensure /etc/docker exists (before the package creates it)
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    mode: "0755"
+
 - name: Write Docker daemon.json (log rotation)
   ansible.builtin.template:
     src: daemon.json.j2
@@ -65,6 +72,7 @@
     name: docker
     enabled: true
     state: started
+  when: not ansible_check_mode   # unit/file is only created in a real run
 
 # ── Weekly prune ───────────────────────────────────────────────────────────────
 - name: Write docker-prune service
@@ -89,6 +97,7 @@
     name: docker-prune.timer
     enabled: true
     state: started
+  when: not ansible_check_mode   # unit/file is only created in a real run
 
 # ── Node Exporter (scraped by monitoring-01) ───────────────────────────────────
 - name: Install Node Exporter
@@ -101,3 +110,4 @@
     name: prometheus-node-exporter
     enabled: true
     state: started
+  when: not ansible_check_mode   # unit/file is only created in a real run

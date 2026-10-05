@@ -4,6 +4,7 @@ Description=Back up Penpot database and assets
 Requires=docker.service
 After=docker.service
 RequiresMountsFor={{ penpot_backup_dir }}
+OnFailure=penpot-backup-failed.service
 
 [Service]
 Type=oneshot

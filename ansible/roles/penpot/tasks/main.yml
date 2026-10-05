@@ -37,6 +37,8 @@
     src: env.j2
     dest: "{{ penpot_dir }}/.env"
     mode: "0600"
+  no_log: true
+  diff: false
   notify: Restart penpot stack
 
 - name: Write Penpot docker-compose.yml
@@ -60,6 +62,13 @@
     mode: "0644"
   notify: Reload systemd
 
+- name: Write Penpot backup failure alert unit
+  ansible.builtin.template:
+    src: penpot-backup-failed.service.j2
+    dest: /etc/systemd/system/penpot-backup-failed.service
+    mode: "0644"
+  notify: Reload systemd
+
 - name: Write Penpot backup timer
   ansible.builtin.template:
     src: penpot-backup.timer.j2
@@ -75,9 +84,11 @@
     name: penpot-backup.timer
     enabled: true
     state: started
+  when: not ansible_check_mode   # unit/file is only created in a real run
 
 # ── Start stack ────────────────────────────────────────────────────────────────
 - name: Start Penpot stack
   community.docker.docker_compose_v2:
     project_src: "{{ penpot_dir }}"
     remove_orphans: true
+  when: not ansible_check_mode   # unit/file is only created in a real run

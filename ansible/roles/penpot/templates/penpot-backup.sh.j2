@@ -4,6 +4,8 @@ set -euo pipefail
 
 backup_dir="{{ penpot_backup_dir }}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+# Remove half-written files if any step fails; the unit's OnFailure alerts.
+trap 'rm -f "${backup_dir}"/penpot-*"${stamp}"*.partial' EXIT
 
 docker compose --project-directory "{{ penpot_dir }}" exec -T penpot-postgres \
   pg_dump --username penpot --format custom penpot \

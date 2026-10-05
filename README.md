@@ -203,7 +203,7 @@ otherwise it is asked once per run and kept only in RAM.
 |---------|---------|
 | `./run.sh edit-config` | Create (from `config.yml.example`) or edit the encrypted `config.yml` |
 | `./run.sh edit-vault` | Edit the encrypted `vault.yml` |
-| `./run.sh bootstrap --limit <host> -u <user> -k -K` | New host: create `deploy`, install keys, disable password SSH |
+| `./run.sh bootstrap --limit <host> -e ansible_user=<user> -k -K` | New host: create `deploy`, install keys, disable password SSH (`-e`, not `-u`: the inventory's `ansible_user: deploy` overrides `-u`) |
 | `./run.sh bootstrap` | Authorize machines listed in `deploy_authorized_keys` (run from an authorized machine) |
 | `./run.sh lint` | ansible-lint with the CI pins |
 
@@ -250,12 +250,15 @@ VM; the roles assume it is already mounted.
 
 > **Private repositories only.** A self-hosted runner on a public repository
 > runs code from fork pull requests on this LAN. The runner user is in the
-> `docker` group, which is root-equivalent on the VM; for stronger isolation,
-> move runners to a dedicated VM with nftables egress rules that drop LAN
-> destinations.
+> `docker` group, which is root-equivalent on the VM: any workflow step can
+> read Penpot's secrets (`docker inspect`), its data in `/srv/penpot`, and its
+> backups, and job containers are not bound by the runner's CPU/memory caps.
+> This is accepted for private repositories you control; for stronger
+> isolation, move runners to a dedicated VM with nftables egress rules that
+> drop LAN destinations.
 
 ```bash
-ansible-playbook ansible/bootstrap.yml -u <your_user> -k -K --limit tools-01
+ansible-playbook ansible/bootstrap.yml -e ansible_user=<your_user> -k -K --limit tools-01
 ansible-playbook ansible/site.yml --limit tools-01
 ```
 

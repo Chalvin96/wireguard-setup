@@ -8,3 +8,4 @@
     project_src: "{{ penpot_dir }}"
     remove_orphans: true
     state: restarted
+  when: not ansible_check_mode

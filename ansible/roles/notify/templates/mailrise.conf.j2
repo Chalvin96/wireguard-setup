@@ -3,9 +3,10 @@ listen:
   host: {{ edge_ip }}
   port: {{ notify_port }}
 
+# Keys are full addresses; a bare key would mean <key>@mailrise.xyz.
 configs:
 {% for channel, webhook in vault_notify_discord_webhooks.items() %}
-  {{ channel }}:
+  "{{ channel }}@{{ notify_mail_domain }}":
     urls:
       - "{{ webhook }}"
 {% endfor %}

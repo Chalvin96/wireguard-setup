@@ -7,7 +7,7 @@
 #   ./run.sh bootstrap [args]    create/authorize the deploy user (bootstrap.yml)
 #   ./run.sh edit-config         create or edit the encrypted group_vars/all/config.yml
 #   ./run.sh edit-vault          edit the encrypted group_vars/all/vault.yml
-#   ./run.sh lint                ansible-lint, same pins as CI
+#   ./run.sh lint                ansible-lint with the CI pins
 #
 # The vault password comes from ./.vault_password when present; otherwise it is
 # asked once per run and kept in RAM (/dev/shm) until the script exits.
@@ -17,6 +17,8 @@ cd "$(dirname "$0")"
 
 K_PYTHON="3.12"
 K_ANSIBLE_CORE="ansible-core>=2.17,<2.18"
+# Lint uses exactly the pins in .github/workflows/lint.yml.
+K_LINT_ANSIBLE_CORE="ansible-core>=2.16,<2.18"
 K_ANSIBLE_LINT="ansible-lint>=24.2,<25"
 K_CONFIG="ansible/group_vars/all/config.yml"
 K_CONFIG_EXAMPLE="ansible/group_vars/all/config.yml.example"
@@ -35,71 +37,91 @@ install_collections() {
   ansible_tool ansible-galaxy collection install -r ansible/requirements.yml -p .collections >/dev/null
 }
 
-# Sets VAULT_PASS to a password file path. Runs in the main shell so the
-# cleanup trap lives until the script exits (not just a command substitution).
-VAULT_PASS=""
-load_vault_password() {
+# Plaintext files created by this script (password, new config) are removed on
+# exit, including on errors and Ctrl-C.
+TEMP_FILES=()
+cleanup_temp_files() {
+  local file
+  for file in "${TEMP_FILES[@]}"; do
+    shred -u "$file" 2>/dev/null || rm -f "$file"
+  done
+}
+trap cleanup_temp_files EXIT
+
+# Sets VAULT_PASS_FILE: ./.vault_password when present (must be mode 0600),
+# otherwise a RAM-only file holding a password read from the terminal.
+VAULT_PASS_FILE=""
+resolve_vault_password_file() {
   if [[ -f .vault_password ]]; then
-    VAULT_PASS=".vault_password"
+    if [[ "$(stat -c %a .vault_password)" != "600" ]]; then
+      echo ".vault_password must be mode 0600: chmod 600 .vault_password" >&2
+      exit 1
+    fi
+    VAULT_PASS_FILE=".vault_password"
     return
   fi
-  VAULT_PASS="$(umask 077 && mktemp -p /dev/shm vaultpass.XXXXXX)"
-  trap 'shred -u "$VAULT_PASS" 2>/dev/null || rm -f "$VAULT_PASS"' EXIT
+  VAULT_PASS_FILE="$(umask 077 && mktemp -p /dev/shm vaultpass.XXXXXX)"
+  TEMP_FILES+=("$VAULT_PASS_FILE")
   local password
   read -rsp "Vault password: " password </dev/tty
   echo >&2
-  printf '%s\n' "$password" > "$VAULT_PASS"
+  printf '%s\n' "$password" > "$VAULT_PASS_FILE"
 }
 
 edit_config() {
-  local pass="$1"
+  local vault_pass_file="$1"
   if [[ ! -f "$K_CONFIG" ]]; then
     local plain
     plain="$(umask 077 && mktemp -p /dev/shm config.XXXXXX)"
+    TEMP_FILES+=("$plain")
     cp "$K_CONFIG_EXAMPLE" "$plain"
     "${EDITOR:-nano}" "$plain"
-    ansible_tool ansible-vault encrypt --vault-password-file "$pass" "$plain" --output "$K_CONFIG"
-    shred -u "$plain"
+    ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$plain" --output "$K_CONFIG"
     echo "Created encrypted $K_CONFIG"
     return
   fi
   if ! head -1 "$K_CONFIG" | grep -q '^\$ANSIBLE_VAULT'; then
-    ansible_tool ansible-vault encrypt --vault-password-file "$pass" "$K_CONFIG"
+    ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$K_CONFIG"
     echo "Encrypted existing plaintext $K_CONFIG"
   fi
-  EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$pass" "$K_CONFIG"
+  EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$vault_pass_file" "$K_CONFIG"
 }
 
-command="${1:-all}"
-[[ $# -gt 0 ]] && shift
+# A leading flag (./run.sh --check --diff) means "all hosts".
+if [[ $# -eq 0 || "$1" == -* ]]; then
+  command="all"
+else
+  command="$1"
+  shift
+fi
 
 case "$command" in
   lint)
     install_collections
     cd ansible
-    exec uvx --quiet --python "$K_PYTHON" --from "$K_ANSIBLE_LINT" --with "$K_ANSIBLE_CORE" ansible-lint "$@"
+    exec uvx --quiet --python "$K_PYTHON" --from "$K_ANSIBLE_LINT" --with "$K_LINT_ANSIBLE_CORE" ansible-lint "$@"
     ;;
   edit-config)
-    load_vault_password
-    edit_config "$VAULT_PASS"
+    resolve_vault_password_file
+    edit_config "$VAULT_PASS_FILE"
     ;;
   edit-vault)
-    load_vault_password
-    EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$VAULT_PASS" "$K_VAULT"
+    resolve_vault_password_file
+    EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$VAULT_PASS_FILE" "$K_VAULT"
     ;;
   bootstrap)
     install_collections
-    load_vault_password
-    ansible_tool ansible-playbook ansible/bootstrap.yml --vault-password-file "$VAULT_PASS" "$@"
+    resolve_vault_password_file
+    ansible_tool ansible-playbook ansible/bootstrap.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
     ;;
   all)
     install_collections
-    load_vault_password
-    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS" "$@"
+    resolve_vault_password_file
+    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
     ;;
   *)
     install_collections
-    load_vault_password
-    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS" --limit "$command" "$@"
+    resolve_vault_password_file
+    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" --limit "$command" "$@"
     ;;
 esac

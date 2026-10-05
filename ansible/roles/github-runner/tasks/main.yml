@@ -1,0 +1,142 @@
+---
+# Self-hosted GitHub Actions runners for PRIVATE repositories only.
+# Never list a public repository here: a pull request from a fork would run
+# arbitrary code on this LAN.
+#
+# One runner instance per repository (personal accounts cannot share a runner
+# across repositories). Instances live on the boot SSD under
+# {{ github_runner_home }}; each registers once using a short-lived token
+# fetched with the fine-grained PAT from the vault.
+
+# ── Runner user ────────────────────────────────────────────────────────────────
+# Membership in the docker group is root-equivalent on this host. Acceptable
+# for private repositories whose code you write; see README for the isolation
+# upgrade path.
+- name: Create runner user
+  ansible.builtin.user:
+    name: "{{ github_runner_user }}"
+    home: "{{ github_runner_home }}"
+    shell: /bin/bash
+    groups: docker
+    append: true
+    system: true
+    create_home: true
+
+- name: Create runner download directory
+  ansible.builtin.file:
+    path: "{{ github_runner_home }}/dist"
+    state: directory
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0755"
+
+- name: Download pinned runner release (checksum verified)
+  ansible.builtin.get_url:
+    url: "https://github.com/actions/runner/releases/download/v{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
+    dest: "{{ github_runner_home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
+    checksum: "sha256:{{ github_runner_sha256 }}"
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0644"
+
+# ── Per-repository instances ───────────────────────────────────────────────────
+- name: Create runner instance directories
+  ansible.builtin.file:
+    path: "{{ github_runner_home }}/{{ item.repo }}"
+    state: directory
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0750"
+  loop: "{{ github_runner_repos }}"
+  loop_control:
+    label: "{{ item.owner }}/{{ item.repo }}"
+
+- name: Unpack runner into each instance (first install only; runner self-updates)
+  ansible.builtin.unarchive:
+    src: "{{ github_runner_home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
+    dest: "{{ github_runner_home }}/{{ item.repo }}"
+    remote_src: true
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    creates: "{{ github_runner_home }}/{{ item.repo }}/config.sh"
+  loop: "{{ github_runner_repos }}"
+  loop_control:
+    label: "{{ item.owner }}/{{ item.repo }}"
+
+# The upstream script apt-installs the .NET runtime libraries; it is
+# idempotent, so it is not reported as a change.
+- name: Install runner OS dependencies
+  ansible.builtin.command: ./bin/installdependencies.sh
+  args:
+    chdir: "{{ github_runner_home }}/{{ github_runner_repos[0].repo }}"
+  changed_when: false
+
+- name: Check which instances are already registered
+  ansible.builtin.stat:
+    path: "{{ github_runner_home }}/{{ item.repo }}/.runner"
+  register: github_runner_registered
+  loop: "{{ github_runner_repos }}"
+  loop_control:
+    label: "{{ item.owner }}/{{ item.repo }}"
+
+- name: Fetch registration token for unregistered instances
+  ansible.builtin.uri:
+    url: "https://api.github.com/repos/{{ item.item.owner }}/{{ item.item.repo }}/actions/runners/registration-token"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ vault_github_runner_pat }}"
+      Accept: application/vnd.github+json
+      X-GitHub-Api-Version: "2022-11-28"
+    status_code: 201
+  register: github_runner_tokens
+  loop: "{{ github_runner_registered.results }}"
+  loop_control:
+    label: "{{ item.item.owner }}/{{ item.item.repo }}"
+  when: not item.stat.exists
+  no_log: true
+
+- name: Register unregistered instances
+  ansible.builtin.command:
+    argv:
+      - ./config.sh
+      - --unattended
+      - --replace
+      - --url
+      - "https://github.com/{{ item.item.item.owner }}/{{ item.item.item.repo }}"
+      - --token
+      - "{{ item.json.token }}"
+      - --name
+      - "{{ inventory_hostname }}-{{ item.item.item.repo }}"
+      - --labels
+      - "{{ github_runner_labels | join(',') }}"
+      - --work
+      - _work
+    chdir: "{{ github_runner_home }}/{{ item.item.item.repo }}"
+    creates: "{{ github_runner_home }}/{{ item.item.item.repo }}/.runner"
+  become: true
+  become_user: "{{ github_runner_user }}"
+  loop: "{{ github_runner_tokens.results }}"
+  loop_control:
+    label: "{{ item.item.item.owner | default('') }}/{{ item.item.item.repo | default('') }}"
+  when: item is not skipped
+  no_log: true
+
+# ── systemd ────────────────────────────────────────────────────────────────────
+- name: Write templated runner unit
+  ansible.builtin.template:
+    src: actions-runner@.service.j2
+    dest: /etc/systemd/system/actions-runner@.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers so the unit is loaded
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable runner instances
+  ansible.builtin.systemd:
+    name: "actions-runner@{{ item.repo }}"
+    enabled: true
+    state: started
+  loop: "{{ github_runner_repos }}"
+  loop_control:
+    label: "{{ item.owner }}/{{ item.repo }}"

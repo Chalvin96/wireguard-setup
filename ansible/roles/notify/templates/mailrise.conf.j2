@@ -1,0 +1,11 @@
+# Managed by Ansible — do not edit manually
+listen:
+  host: {{ edge_ip }}
+  port: {{ notify_port }}
+
+configs:
+{% for channel, webhook in vault_notify_discord_webhooks.items() %}
+  {{ channel }}:
+    urls:
+      - "{{ webhook }}"
+{% endfor %}

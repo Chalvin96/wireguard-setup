@@ -3,3 +3,5 @@
 
 # Ansible runtime artifacts
 *.retry
+.collections/
+ansible/group_vars/all/*.bak-*

@@ -36,6 +36,7 @@ flowchart TD
         BL2["nftables bouncer"]
         F2B2["fail2ban — SSH"]
         PT["Promtail"]
+        MR["Mailrise<br/>LAN SMTP → Apprise → Discord"]
     end
 
     BACK(["backend services :8080"]):::ext
@@ -85,6 +86,9 @@ outside Ansible's control.
    **Mini PC**.
 3. **Caddy** on the Mini PC unwraps PROXY Protocol v2, terminates TLS, and
    reverse-proxies to your backend.
+   Sites listed in `caddy_sites` (e.g. GlitchTip at `sentry.<domain>`) are
+   rendered into the managed Caddyfile and validated before reload;
+   hand-written files in `/etc/caddy/conf.d/` still load alongside them.
 4. In parallel, **CrowdSec** reads Caddy's JSON access log, and **Promtail**
    ships those logs to the **Monitoring VM**.
 
@@ -93,8 +97,9 @@ outside Ansible's control.
 | Node | Ansible host | Runs |
 |------|--------------|------|
 | **VPS** (Hetzner/DigitalOcean) | `ingress-01` | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH) |
-| **Mini PC** | `edge-01` | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail |
+| **Mini PC** | `edge-01` | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail, Mailrise |
 | **Monitoring VM** | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose) |
+| **Tools VM** (Proxmox) | `tools-01` | Penpot, self-hosted GitHub Actions runners, node-exporter |
 
 ## Security Design
 
@@ -140,6 +145,18 @@ SSH-only, incremental banning via `nftables[type=allports]`:
   banning always act on the real source.
 - **nftables TTL bans** auto-expire — no manual unban needed in the normal path.
 
+## Notifications
+
+**Mailrise** on the edge node is an internal SMTP gateway: anything that can only
+send email (Proxmox, smartd, cron, Penpot) mails `<channel>@mailrise.lan` at
+`edge_ip:8025`, and Mailrise posts it to that channel's Discord webhook via
+Apprise. Channels are the keys of `vault_notify_discord_webhooks`.
+
+- Runs from a pinned Python venv as a hardened systemd service (no Docker).
+- LAN only: an nftables chain (`mailrise`) drops port 8025 from anything outside
+  `wireguard_lan_cidr`, and the VPS never forwards it.
+- Grafana and GlitchTip keep their native Discord integrations.
+
 ## Observability
 
 `Promtail → Loki → Prometheus → Grafana`, plus `GlitchTip`, on the Monitoring VM
@@ -158,8 +175,7 @@ SSH-only, incremental banning via `nftables[type=allports]`:
 
 ## Prerequisites
 
-- Ansible 2.14+ and `ansible-lint` on your laptop
-- Required collections: `ansible-galaxy collection install -r ansible/requirements.yml`
+- [`uv`](https://docs.astral.sh/uv/) on the control machine (`run.sh` pins Ansible and installs collections)
 - Three nodes (VPS + Mini PC + Monitoring VM) on Debian/Ubuntu
 - Mikrotik (RouterOS 7) reachable over SSH with your pubkey — one-time
   `/user ssh-keys import` (see [`routeros-wireguard-setup.txt`](routeros-wireguard-setup.txt));
@@ -167,25 +183,38 @@ SSH-only, incremental banning via `nftables[type=allports]`:
 
 ## Quick Start
 
+Everything needed to deploy is committed: the inventory, the **vault-encrypted**
+`config.yml` (real IPs, domains) and `vault.yml` (secrets). A control machine
+only needs [`uv`](https://docs.astral.sh/uv/), the vault password, and an SSH key
+authorized as `deploy`. `run.sh` pins Ansible and installs collections itself.
+
 ```bash
-# 1. Copy and fill in config files
-cp ansible/inventory/hosts.yml.example        ansible/inventory/hosts.yml
-cp ansible/group_vars/all/config.yml.example  ansible/group_vars/all/config.yml
-# Edit both with real IPs, domain, ports
+git clone git@github.com:Chalvin96/wireguard-setup.git && cd wireguard-setup
 
-# 2. Pre-generate keys, then seal them in the vault
-#    WireGuard:  wg genkey | tee private.key | wg pubkey > public.key
-ansible-vault edit ansible/group_vars/all/vault.yml
+./run.sh edge-01 --check --diff   # dry run one host; asks for the vault password
+./run.sh edge-01                  # apply one host or group
+./run.sh                          # apply everything (site.yml)
+```
 
-# 3. Bootstrap the deploy user on each host (one-time)
-ansible-playbook ansible/bootstrap.yml -u <your_user> -k -K
-# Non-default key path? add:  -e bootstrap_ssh_pubkey=~/.ssh/id_rsa.pub
+Put the password in `.vault_password` (gitignored) to skip the prompt;
+otherwise it is asked once per run and kept only in RAM.
 
-# 4. Deploy the whole stack
-ansible-playbook ansible/site.yml --vault-password-file ansible/.vault_password
+| Command | Purpose |
+|---------|---------|
+| `./run.sh edit-config` | Create (from `config.yml.example`) or edit the encrypted `config.yml` |
+| `./run.sh edit-vault` | Edit the encrypted `vault.yml` |
+| `./run.sh bootstrap --limit <host> -u <user> -k -K` | New host: create `deploy`, install keys, disable password SSH |
+| `./run.sh bootstrap` | Authorize machines listed in `deploy_authorized_keys` (run from an authorized machine) |
+| `./run.sh lint` | ansible-lint with the CI pins |
 
-# 5. Add a WireGuard client (writes <client>.conf locally — no key in stdout)
-ansible-playbook ansible/add-client.yml --vault-password-file ansible/.vault_password
+**Adding a control machine:** append its public key to `deploy_authorized_keys`
+(`./run.sh edit-config`), run `./run.sh bootstrap` from a machine that already
+has access, commit. No private keys are stored in the repository.
+
+**Add a WireGuard client** (writes `<client>.conf` locally — no key in stdout):
+
+```bash
+uvx --python 3.12 --from 'ansible-core>=2.17,<2.18' ansible-playbook ansible/add-client.yml --ask-vault-pass
 ```
 
 ## Operations
@@ -200,16 +229,48 @@ ssh -i <vps_ban private key> banagent@<ingress_ip> "203.0.113.5 3600"
 ansible-playbook ansible/unban.yml
 ```
 
+## Tools VM
+
+A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
+
+| Disk | Storage | Mount | Holds |
+|------|---------|-------|-------|
+| `scsi0` 80 GB | SSD (`ssd=1`, `discard=on`) | `/` | OS, `/var/lib/docker`, runner workspaces (hot, throwaway) |
+| `scsi1` | HDD | `/srv` (`noatime`) | Penpot data, backups (persistent, bulky) |
+
+Mount the HDD at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
+VM; the roles assume it is already mounted.
+
+- **docker** installs Docker CE with log rotation and a weekly prune timer
+  (build cache capped at `docker_prune_keep_storage`).
+- **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
+  `pg_dump` + assets archive into `/srv/backups/penpot`.
+- **github-runner** registers one runner per repository in
+  `github_runner_repos` using a fine-grained PAT from the vault.
+
+> **Private repositories only.** A self-hosted runner on a public repository
+> runs code from fork pull requests on this LAN. The runner user is in the
+> `docker` group, which is root-equivalent on the VM; for stronger isolation,
+> move runners to a dedicated VM with nftables egress rules that drop LAN
+> destinations.
+
+```bash
+ansible-playbook ansible/bootstrap.yml -u <your_user> -k -K --limit tools-01
+ansible-playbook ansible/site.yml --limit tools-01
+```
+
 ## Repository Layout
 
 ```
+run.sh                    # clone-and-run entry point (uv-pinned Ansible, vault password once)
 ansible/
-├── site.yml              # deploy all roles in order (ingress / mikrotik / edge / monitoring)
+├── site.yml              # deploy all roles in order (ingress / mikrotik / edge / monitoring / tools)
 ├── add-client.yml        # add WireGuard peer → writes client.conf locally
 ├── bootstrap.yml         # one-time: create deploy user + install SSH key
 ├── unban.yml             # manual unban (prompts for IP)
-├── inventory/hosts.yml.example
+├── inventory/hosts.yml   # committed; addresses come from encrypted config.yml
 └── group_vars/all/
+    ├── config.yml          # Ansible Vault encrypted real config
     ├── config.yml.example  # all variables documented
     └── vault.yml           # Ansible Vault encrypted secrets
 roles/
@@ -221,7 +282,11 @@ roles/
 ├── crowdsec/            # edge-01: LAPI + Hub + blocklist-import  |  ingress-01: bouncer
 ├── caddy/               # edge-01: reverse proxy + metrics + nftables ACL
 ├── promtail/            # edge-01: log shipping to Loki
-└── monitoring/          # monitoring-01: Docker Compose observability stack
+├── notify/              # edge-01: Mailrise SMTP → Apprise → Discord (LAN only)
+├── monitoring/          # monitoring-01: Docker Compose observability stack
+├── docker/              # tools-01: Docker CE, log rotation, weekly prune
+├── penpot/              # tools-01: Penpot stack + nightly backup timer
+└── github-runner/       # tools-01: per-repository Actions runners (private repos only)
 ```
 
 ## Vault Variables
@@ -246,6 +311,9 @@ for the full list. Highlights:
 | `vault_crowdsec_vps_bouncer_key` | Pre-shared key for the VPS CrowdSec bouncer |
 | `vault_crowdsec_edge_bouncer_key` | Pre-shared key for the edge CrowdSec bouncer |
 | `vault_crowdsec_machine_password` | Password for the blocklist-import machine account |
+| `vault_notify_discord_webhooks` | Channel → Discord webhook map for Mailrise |
+| `vault_penpot_secret_key` / `vault_penpot_postgres_password` | Penpot secret key and database password |
+| `vault_github_runner_pat` | Fine-grained PAT (Administration: write) used to fetch runner registration tokens |
 
 ## Skills Demonstrated
 

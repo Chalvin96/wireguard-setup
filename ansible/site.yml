@@ -10,17 +10,17 @@
     - network
     - distribution
   roles:
-    - wireguard-server
-    - haproxy
-    - vps-blocklist
-    - fail2ban
-    - crowdsec
+    - { role: wireguard-server, tags: [wireguard-server] }
+    - { role: haproxy, tags: [haproxy] }
+    - { role: vps-blocklist, tags: [vps-blocklist] }
+    - { role: fail2ban, tags: [fail2ban] }
+    - { role: crowdsec, tags: [crowdsec] }
 
 - name: Mikrotik — WireGuard tunnel and CGNAT watchdog
   hosts: mikrotik
   gather_facts: false
   roles:
-    - mikrotik-wireguard
+    - { role: mikrotik-wireguard, tags: [mikrotik-wireguard] }
 
 - name: Edge — reverse proxy + security stack
   hosts: edge
@@ -30,10 +30,11 @@
     - network
     - distribution
   roles:
-    - caddy
-    - fail2ban
-    - promtail
-    - crowdsec
+    - { role: caddy, tags: [caddy] }
+    - { role: fail2ban, tags: [fail2ban] }
+    - { role: promtail, tags: [promtail] }
+    - { role: crowdsec, tags: [crowdsec] }
+    - { role: notify, tags: [notify] }
 
 - name: Monitoring VM — observability stack
   hosts: monitoring
@@ -43,4 +44,16 @@
     - network
     - distribution
   roles:
-    - monitoring
+    - { role: monitoring, tags: [monitoring] }
+
+- name: Tools VM — Penpot + self-hosted CI runners
+  hosts: tools
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - { role: docker, tags: [docker] }
+    - { role: penpot, tags: [penpot] }
+    - { role: github-runner, tags: [github-runner] }

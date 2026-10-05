@@ -1,0 +1,103 @@
+---
+# Docker CE for the tools VM. data-root stays at the default /var/lib/docker
+# (boot SSD): image layers and build cache are hot, throwaway data. A weekly
+# prune timer caps their growth. The HDD data disk (/srv) is mounted when the
+# VM is created; this role does not manage disks.
+
+# ── Docker CE ──────────────────────────────────────────────────────────────────
+- name: Install Docker dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: true
+
+- name: Ensure apt keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Determine dpkg architecture
+  ansible.builtin.command: dpkg --print-architecture
+  register: docker_dpkg_arch
+  changed_when: false
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ docker_dpkg_arch.stdout }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker CE and Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+# ── Daemon config ──────────────────────────────────────────────────────────────
+- name: Write Docker daemon.json (log rotation)
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+  notify: Restart docker
+
+- name: Enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+# ── Weekly prune ───────────────────────────────────────────────────────────────
+- name: Write docker-prune service
+  ansible.builtin.template:
+    src: docker-prune.service.j2
+    dest: /etc/systemd/system/docker-prune.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Write docker-prune timer
+  ansible.builtin.template:
+    src: docker-prune.timer.j2
+    dest: /etc/systemd/system/docker-prune.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers so the timer unit is loaded
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable docker-prune timer
+  ansible.builtin.systemd:
+    name: docker-prune.timer
+    enabled: true
+    state: started
+
+# ── Node Exporter (scraped by monitoring-01) ───────────────────────────────────
+- name: Install Node Exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+
+- name: Enable Node Exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started

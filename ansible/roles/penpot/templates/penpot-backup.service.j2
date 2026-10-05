@@ -1,0 +1,10 @@
+# Managed by Ansible
+[Unit]
+Description=Back up Penpot database and assets
+Requires=docker.service
+After=docker.service
+RequiresMountsFor={{ penpot_backup_dir }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/penpot-backup

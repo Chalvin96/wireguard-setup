@@ -1,0 +1,85 @@
+# Managed by Ansible
+name: penpot
+
+services:
+  penpot-frontend:
+    image: "penpotapp/frontend:${PENPOT_VERSION}"
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "{{ tools_ip }}:{{ penpot_port }}:8080"
+    volumes:
+      - ./assets:/opt/data/assets
+    environment:
+      - PENPOT_FLAGS=${PENPOT_FLAGS}
+      - PENPOT_HTTP_SERVER_MAX_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_BODY_SIZE}
+      - PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE}
+    depends_on:
+      - penpot-backend
+      - penpot-exporter
+    networks:
+      - penpot
+
+  penpot-backend:
+    image: "penpotapp/backend:${PENPOT_VERSION}"
+    restart: unless-stopped
+    mem_limit: 3g
+    volumes:
+      - ./assets:/opt/data/assets
+    environment:
+      - JAVA_OPTS=-Xmx2g -XX:MaxMetaspaceSize=250m -XX:ReservedCodeCacheSize=128m
+      - PENPOT_FLAGS=${PENPOT_FLAGS}
+      - PENPOT_SECRET_KEY=${PENPOT_SECRET_KEY}
+      - PENPOT_PUBLIC_URI=${PENPOT_PUBLIC_URI}
+      - PENPOT_DATABASE_URI=${PENPOT_DATABASE_URI}
+      - PENPOT_DATABASE_USERNAME=${PENPOT_DATABASE_USERNAME}
+      - PENPOT_DATABASE_PASSWORD=${PENPOT_DATABASE_PASSWORD}
+      - PENPOT_REDIS_URI=${PENPOT_REDIS_URI}
+      - PENPOT_OBJECTS_STORAGE_BACKEND=fs
+      - PENPOT_OBJECTS_STORAGE_FS_DIRECTORY=/opt/data/assets
+      - PENPOT_TELEMETRY_ENABLED=${PENPOT_TELEMETRY_ENABLED}
+      - PENPOT_HTTP_SERVER_MAX_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_BODY_SIZE}
+      - PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE}
+    depends_on:
+      - penpot-postgres
+      - penpot-valkey
+    networks:
+      - penpot
+
+  penpot-exporter:
+    image: "penpotapp/exporter:${PENPOT_VERSION}"
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      - PENPOT_PUBLIC_URI=http://penpot-frontend:8080
+      - PENPOT_SECRET_KEY=${PENPOT_SECRET_KEY}
+      - PENPOT_REDIS_URI=${PENPOT_REDIS_URI}
+    networks:
+      - penpot
+
+  penpot-postgres:
+    image: "{{ penpot_postgres_image }}"
+    restart: unless-stopped
+    mem_limit: 1g
+    stop_signal: SIGINT
+    environment:
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - POSTGRES_DB=${PENPOT_DATABASE_NAME}
+      - POSTGRES_USER=${PENPOT_DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${PENPOT_DATABASE_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - penpot
+
+  penpot-valkey:
+    image: "{{ penpot_valkey_image }}"
+    restart: unless-stopped
+    mem_limit: 192m
+    environment:
+      - VALKEY_EXTRA_FLAGS=--maxmemory 128mb --maxmemory-policy volatile-lfu
+    networks:
+      - penpot
+
+networks:
+  penpot:

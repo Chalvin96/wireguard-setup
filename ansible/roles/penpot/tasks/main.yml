@@ -1,0 +1,83 @@
+---
+# Self-hosted Penpot on the tools VM. Compose project + persistent data live on
+# the HDD data disk; a nightly timer dumps Postgres and archives assets.
+
+# ── Directory tree ─────────────────────────────────────────────────────────────
+- name: Create Penpot project directory
+  ansible.builtin.file:
+    path: "{{ penpot_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create Penpot assets directory (backend runs as UID 1001)
+  ansible.builtin.file:
+    path: "{{ penpot_dir }}/assets"
+    state: directory
+    owner: "1001"
+    group: "1001"
+    mode: "0755"
+
+- name: Create Penpot Postgres directory (postgres runs as UID 999)
+  ansible.builtin.file:
+    path: "{{ penpot_dir }}/postgres"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: "0700"
+
+- name: Create Penpot backup directory
+  ansible.builtin.file:
+    path: "{{ penpot_backup_dir }}"
+    state: directory
+    mode: "0750"
+
+# ── Config files ───────────────────────────────────────────────────────────────
+- name: Write Penpot .env (secrets from vault)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ penpot_dir }}/.env"
+    mode: "0600"
+  notify: Restart penpot stack
+
+- name: Write Penpot docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ penpot_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Restart penpot stack
+
+# ── Nightly backup ─────────────────────────────────────────────────────────────
+- name: Write Penpot backup script
+  ansible.builtin.template:
+    src: penpot-backup.sh.j2
+    dest: /usr/local/bin/penpot-backup
+    mode: "0750"
+
+- name: Write Penpot backup service
+  ansible.builtin.template:
+    src: penpot-backup.service.j2
+    dest: /etc/systemd/system/penpot-backup.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Write Penpot backup timer
+  ansible.builtin.template:
+    src: penpot-backup.timer.j2
+    dest: /etc/systemd/system/penpot-backup.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers so units and config are current
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable Penpot backup timer
+  ansible.builtin.systemd:
+    name: penpot-backup.timer
+    enabled: true
+    state: started
+
+# ── Start stack ────────────────────────────────────────────────────────────────
+- name: Start Penpot stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ penpot_dir }}"
+    remove_orphans: true

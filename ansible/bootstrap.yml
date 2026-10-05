@@ -1,6 +1,7 @@
 ---
 # Run once per host as your existing named user.
-# ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
+# New host:        ./run.sh bootstrap --limit <host> -u <your_user> --ask-pass --ask-become-pass
+# Authorize a key: ./run.sh bootstrap   (from a machine already authorized as deploy)
 # Prerequisites: ansible-galaxy collection install -r requirements.yml
 - name: Bootstrap deploy user
   hosts: 'all:!mikrotik'
@@ -31,11 +32,18 @@
         owner: deploy
         group: deploy
 
-    - name: Add operator SSH public key
+    - name: Add operator SSH public key (the machine running bootstrap)
       ansible.posix.authorized_key:
         user: deploy
         key: "{{ bootstrap_ssh_pubkey }}"
         state: present
+
+    - name: Add authorized operator machines from config
+      ansible.posix.authorized_key:
+        user: deploy
+        key: "{{ item }}"
+        state: present
+      loop: "{{ deploy_authorized_keys | default([]) }}"
 
     - name: Configure passwordless sudo
       ansible.builtin.copy:

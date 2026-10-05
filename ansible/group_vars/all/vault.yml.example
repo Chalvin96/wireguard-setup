@@ -30,3 +30,16 @@ vault_caddy_cloudflare_api_token: "changeme-cloudflare-api-token"
 vault_crowdsec_vps_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
 vault_crowdsec_edge_bouncer_key: "changeme-generate-with-cscli-bouncers-add"
 vault_crowdsec_machine_password: "changeme-strong-password-for-blocklist-import-machine"
+
+# ── Notifications (Mailrise on edge-01) ───────────────────────────────────────
+# One Discord webhook per channel; mail to <key>@mailrise.lan posts to it.
+vault_notify_discord_webhooks:
+  alerts: "https://discord.com/api/webhooks/changeme"
+  infra: "https://discord.com/api/webhooks/changeme"
+
+# ── Tools VM ───────────────────────────────────────────────────────────────────
+vault_penpot_secret_key: "changeme-openssl-rand-hex-32"
+vault_penpot_postgres_password: "changeme-url-safe-postgres-password"
+# Fine-grained PAT scoped to the runner repositories only,
+# permission: Administration = Read and write (needed for registration tokens).
+vault_github_runner_pat: "changeme-github-fine-grained-pat"

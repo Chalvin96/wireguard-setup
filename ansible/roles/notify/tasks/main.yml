@@ -1,0 +1,90 @@
+---
+# Internal notification gateway on edge-01: Mailrise accepts SMTP on the LAN and
+# forwards each message through Apprise to Discord. Senders pick the channel by
+# recipient address: <channel>@mailrise.lan (keys of vault_notify_discord_webhooks).
+# LAN only — port {{ notify_port }} is never forwarded from the VPS, and nftables
+# drops it from anything outside wireguard_lan_cidr.
+# Self-contained: a Python venv + systemd unit, no Docker or other roles required.
+
+# ── Install ────────────────────────────────────────────────────────────────────
+- name: Install Python venv and nftables CLI
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - nftables
+    state: present
+    update_cache: true
+
+- name: Install pinned Mailrise into its own venv
+  ansible.builtin.pip:
+    name: "mailrise=={{ notify_mailrise_version }}"
+    virtualenv: /opt/mailrise/venv
+    virtualenv_command: python3 -m venv
+  notify: Restart mailrise
+
+# ── Config ─────────────────────────────────────────────────────────────────────
+# Readable only by root and the service group; holds the Discord webhooks.
+- name: Create mailrise system group
+  ansible.builtin.group:
+    name: mailrise
+    system: true
+
+- name: Write /etc/mailrise.conf (webhooks from vault)
+  ansible.builtin.template:
+    src: mailrise.conf.j2
+    dest: /etc/mailrise.conf
+    owner: root
+    group: mailrise
+    mode: "0640"
+  no_log: true
+  notify: Restart mailrise
+
+- name: Write mailrise systemd unit
+  ansible.builtin.template:
+    src: mailrise.service.j2
+    dest: /etc/systemd/system/mailrise.service
+    mode: "0644"
+  notify: Restart mailrise
+
+# ── Firewall (applied before the listener starts) ─────────────────────────────
+# Loaded by its own oneshot unit, touching only the `inet mailrise` table. The
+# global nftables service is deliberately not reloaded: Debian's default
+# /etc/nftables.conf begins with `flush ruleset`, which would also wipe CrowdSec
+# bouncer and Docker rules on this host.
+- name: Create /etc/nftables.d directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Restrict Mailrise SMTP port to the LAN
+  ansible.builtin.template:
+    src: mailrise.nft.j2
+    dest: /etc/nftables.d/mailrise.nft
+    mode: "0644"
+    validate: nft --check -f %s
+  notify: Apply mailrise firewall
+
+- name: Write mailrise-firewall systemd unit (re-applies the table at boot)
+  ansible.builtin.template:
+    src: mailrise-firewall.service.j2
+    dest: /etc/systemd/system/mailrise-firewall.service
+    mode: "0644"
+  notify: Apply mailrise firewall
+
+- name: Enable mailrise-firewall
+  ansible.builtin.systemd:
+    name: mailrise-firewall
+    enabled: true
+    daemon_reload: true
+
+- name: Flush handlers so the firewall rule and unit are current
+  ansible.builtin.meta: flush_handlers
+
+# ── Start ──────────────────────────────────────────────────────────────────────
+- name: Enable and start Mailrise
+  ansible.builtin.systemd:
+    name: mailrise
+    enabled: true
+    state: started
+    daemon_reload: true

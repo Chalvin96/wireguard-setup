@@ -1,0 +1,21 @@
+# Managed by Ansible
+[Unit]
+Description=Mailrise SMTP to Apprise gateway
+Wants=network-online.target
+Requires=mailrise-firewall.service
+After=network-online.target mailrise-firewall.service
+
+[Service]
+DynamicUser=true
+SupplementaryGroups=mailrise
+ExecStart=/opt/mailrise/venv/bin/mailrise /etc/mailrise.conf
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

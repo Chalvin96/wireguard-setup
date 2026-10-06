@@ -231,12 +231,15 @@ ansible-playbook ansible/unban.yml
 
 ## Tools VM
 
+VM hardware can be provisioned with [OpenTofu](infra/proxmox/README.md).
+Existing VMs are not adopted automatically; import and review their plans first.
+
 A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
 
 | Disk | Storage | Mount | Holds |
 |------|---------|-------|-------|
-| `scsi0` 80 GB | SSD (`ssd=1`, `discard=on`) | `/` | OS, `/var/lib/docker`, runner workspaces (hot, throwaway) |
-| `scsi1` | HDD | `/srv` (`noatime`) | Penpot data, backups (persistent, bulky) |
+| `scsi0` 64 GB | SSD (`ssd=1`, `discard=on`) | `/` | OS, `/var/lib/docker`, runner workspaces (hot, throwaway) |
+| `scsi1` 128 GB | HDD | `/srv` | Penpot data, backups (persistent, bulky) |
 
 Mount the HDD at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
 VM; the roles assume it is already mounted.
@@ -258,9 +261,18 @@ VM; the roles assume it is already mounted.
 > drop LAN destinations.
 
 ```bash
-ansible-playbook ansible/bootstrap.yml -e ansible_user=<your_user> -k -K --limit tools-01
-ansible-playbook ansible/site.yml --limit tools-01
+./run.sh bootstrap --limit tools-01 -e ansible_user=<your_user> -k -K
+./run.sh tools-01 --check --diff
+./run.sh tools-01
 ```
+
+Changing `vault_penpot_postgres_password` does not rotate the password in an
+existing PostgreSQL data directory. During a maintenance window, stop the
+Penpot backend, change the database role password with an interactive `psql`
+`\password penpot` command, update the vault value, and redeploy. Keep the old
+credential available for rollback until login succeeds. Do not put the password
+in shell arguments or logs. Backups share the data disk; copy a verified backup
+off the VM for protection against disk loss.
 
 ## Repository Layout
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Managed by Ansible — nightly Penpot backup: Postgres dump + assets archive.
 set -euo pipefail
+umask 077
 
 backup_dir="{{ penpot_backup_dir }}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -10,10 +11,9 @@ trap 'rm -f "${backup_dir}"/penpot-*"${stamp}"*.partial' EXIT
 docker compose --project-directory "{{ penpot_dir }}" exec -T penpot-postgres \
   pg_dump --username penpot --format custom penpot \
   > "${backup_dir}/penpot-${stamp}.dump.partial"
-mv "${backup_dir}/penpot-${stamp}.dump.partial" "${backup_dir}/penpot-${stamp}.dump"
-
 tar --create --gzip --file "${backup_dir}/penpot-assets-${stamp}.tar.gz.partial" \
   --directory "{{ penpot_dir }}" assets
+mv "${backup_dir}/penpot-${stamp}.dump.partial" "${backup_dir}/penpot-${stamp}.dump"
 mv "${backup_dir}/penpot-assets-${stamp}.tar.gz.partial" "${backup_dir}/penpot-assets-${stamp}.tar.gz"
 
 find "${backup_dir}" -maxdepth 1 -type f -name 'penpot-*' \

@@ -12,6 +12,18 @@
 # Membership in the docker group is root-equivalent on this host. Acceptable
 # for private repositories whose code you write; see README for the isolation
 # upgrade path.
+- name: Require unique repository names for runner instances
+  ansible.builtin.assert:
+    that:
+      - github_runner_repos | map(attribute='repo') | list | unique | length == github_runner_repos | length
+    fail_msg: Runner directories and service instances require unique repository names, including across owners.
+
+- name: Install ACL support for unprivileged runner tasks
+  ansible.builtin.apt:
+    name: acl
+    state: present
+    update_cache: true
+
 - name: Create runner user
   ansible.builtin.user:
     name: "{{ github_runner_user }}"

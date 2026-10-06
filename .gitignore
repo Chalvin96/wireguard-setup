@@ -5,3 +5,11 @@
 *.retry
 .collections/
 ansible/group_vars/all/*.bak-*
+
+# OpenTofu local configuration, state, and saved plans
+infra/proxmox/.terraform/
+infra/proxmox/*.tfstate*
+infra/proxmox/*.tfvars
+infra/proxmox/*.tfvars.json
+infra/proxmox/*.tfplan
+infra/proxmox/crash*.log

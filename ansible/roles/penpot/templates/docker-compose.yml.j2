@@ -12,11 +12,13 @@ services:
       - ./assets:/opt/data/assets
     environment:
       - PENPOT_FLAGS=${PENPOT_FLAGS}
+      - PENPOT_PUBLIC_URI=${PENPOT_PUBLIC_URI}
       - PENPOT_HTTP_SERVER_MAX_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_BODY_SIZE}
       - PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE=${PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE}
     depends_on:
       - penpot-backend
       - penpot-exporter
+      - penpot-mcp
     networks:
       - penpot
 
@@ -43,6 +45,13 @@ services:
     depends_on:
       - penpot-postgres
       - penpot-valkey
+    networks:
+      - penpot
+
+  penpot-mcp:
+    image: "penpotapp/mcp:${PENPOT_VERSION}"
+    restart: unless-stopped
+    mem_limit: 512m
     networks:
       - penpot
 

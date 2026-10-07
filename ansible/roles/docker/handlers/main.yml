@@ -3,9 +3,18 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: Restart docker
+- name: Restart rootless daemons
   ansible.builtin.systemd:
+    scope: user
     name: docker
     state: restarted
     daemon_reload: true
+  become: true
+  become_user: "{{ item.name }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.name][1] }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.name][1] }}/bus"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
   when: not ansible_check_mode

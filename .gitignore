@@ -4,6 +4,7 @@
 # Ansible runtime artifacts
 *.retry
 .collections/
+/log.txt
 ansible/group_vars/all/*.bak-*
 
 # OpenTofu local configuration, state, and saved plans

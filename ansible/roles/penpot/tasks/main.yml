@@ -1,41 +1,50 @@
 ---
-# Self-hosted Penpot on the tools VM. Compose project + persistent data live on
-# the HDD data disk; a nightly timer dumps Postgres and archives assets.
-
-# ── Directory tree ─────────────────────────────────────────────────────────────
 - name: Create Penpot project directory
   ansible.builtin.file:
     path: "{{ penpot_dir }}"
     state: directory
-    mode: "0755"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
+    mode: "0700"
 
-- name: Create Penpot assets directory (backend runs as UID 1001)
+- name: Create Penpot assets directory (container UID 1001 mapped to the host)
   ansible.builtin.file:
     path: "{{ penpot_dir }}/assets"
     state: directory
-    owner: "1001"
-    group: "1001"
+    owner: "{{ docker_apps_subuid | int + 1000 }}"
+    group: "{{ docker_apps_subuid | int + 1000 }}"
     mode: "0755"
 
-- name: Create Penpot Postgres directory (postgres runs as UID 999)
+- name: Create Penpot Postgres directory (container UID 999 mapped to the host)
   ansible.builtin.file:
     path: "{{ penpot_dir }}/postgres"
     state: directory
-    owner: "999"
-    group: "999"
+    owner: "{{ docker_apps_subuid | int + 998 }}"
+    group: "{{ docker_apps_subuid | int + 998 }}"
     mode: "0700"
 
 - name: Create Penpot backup directory
   ansible.builtin.file:
     path: "{{ penpot_backup_dir }}"
     state: directory
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
     mode: "0750"
 
-# ── Config files ───────────────────────────────────────────────────────────────
+- name: Allow applications to traverse the backup parent without listing other backups
+  ansible.posix.acl:
+    path: "{{ penpot_backup_dir | dirname }}"
+    entity: "{{ docker_apps_user }}"
+    etype: user
+    permissions: x
+    state: present
+
 - name: Write Penpot .env (secrets from vault)
   ansible.builtin.template:
     src: env.j2
     dest: "{{ penpot_dir }}/.env"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
     mode: "0600"
   no_log: true
   diff: false
@@ -45,14 +54,28 @@
   ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: "{{ penpot_dir }}/docker-compose.yml"
+    owner: "{{ docker_apps_user }}"
+    group: "{{ docker_apps_user }}"
     mode: "0644"
   notify: Restart penpot stack
 
-# ── Nightly backup ─────────────────────────────────────────────────────────────
+- name: Read the applications account ID
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ docker_apps_user }}"
+
+- name: Write Penpot service
+  ansible.builtin.template:
+    src: penpot.service.j2
+    dest: /etc/systemd/system/penpot.service
+    mode: "0644"
+  notify: Reload systemd
+
 - name: Write Penpot backup script
   ansible.builtin.template:
     src: penpot-backup.sh.j2
     dest: /usr/local/bin/penpot-backup
+    group: "{{ docker_apps_user }}"
     mode: "0750"
 
 - name: Write Penpot backup service
@@ -84,11 +107,20 @@
     name: penpot-backup.timer
     enabled: true
     state: started
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run
 
-# ── Start stack ────────────────────────────────────────────────────────────────
 - name: Start Penpot stack
   community.docker.docker_compose_v2:
     project_src: "{{ penpot_dir }}"
     remove_orphans: true
-  when: not ansible_check_mode   # unit/file is only created in a real run
+    docker_host: "unix:///run/user/{{ getent_passwd[docker_apps_user][1] }}/docker.sock"
+  become: true
+  become_user: "{{ docker_apps_user }}"
+  when: not ansible_check_mode # unit/file is only created in a real run
+
+- name: Enable Penpot startup after reboot
+  ansible.builtin.systemd:
+    name: penpot
+    enabled: true
+    state: started
+  when: not ansible_check_mode

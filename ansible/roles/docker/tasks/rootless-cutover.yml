@@ -1,0 +1,44 @@
+---
+- name: Disable the obsolete system-wide prune timer
+  ansible.builtin.systemd:
+    name: docker-prune.timer
+    state: stopped
+    enabled: false
+  when: not ansible_check_mode
+  failed_when: false # absent on a fresh installation
+
+- name: Stop and mask rootful Docker so socket activation cannot restore it
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop:
+    - docker.socket
+    - docker.service
+  when: not ansible_check_mode
+
+- name: Remove rootful Docker group access from managed accounts
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups: ""
+    append: false
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# GitHub's built-in job-container handling mounts this exact host path.
+# Point it at CI's rootless socket, NOT the applications daemon's socket.
+- name: Configure the GitHub job-container compatibility socket at boot
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/docker-ci.conf
+    content: "L /run/docker.sock - - - - /run/user/{{ getent_passwd[github_runner_user][1] }}/docker.sock\n"
+    mode: "0644"
+
+- name: Link the compatibility socket to the CI rootless daemon
+  ansible.builtin.file:
+    src: "/run/user/{{ getent_passwd[github_runner_user][1] }}/docker.sock"
+    dest: /run/docker.sock
+    state: link
+    force: true
+  when: not ansible_check_mode

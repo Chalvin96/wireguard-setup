@@ -1,0 +1,303 @@
+---
+# One-time migration of an existing tools VM. Never run during a CI job.
+# ./run.sh bootstrap is NOT this playbook. See docs/rootless-docker.md.
+- name: Migrate tools applications and CI to separate rootless Docker daemons
+  hosts: tools
+  become: true
+  force_handlers: true
+  vars:
+    docker_rootless_migration: true
+  pre_tasks:
+    - name: Require explicit confirmation and a real run
+      ansible.builtin.assert:
+        that:
+          - rootless_migration_confirm | default(false) | bool
+          - not ansible_check_mode
+        fail_msg: Read docs/rootless-docker.md and pass rootless_migration_confirm=true during a maintenance window.
+    - name: Refuse to interrupt running CI jobs before changing Docker contexts
+      ansible.builtin.command: pgrep -x Runner.Worker
+      register: rootless_active_jobs
+      changed_when: false
+      failed_when: rootless_active_jobs.rc != 1
+
+    - name: Pause idle runners before configuring their new daemon
+      ansible.builtin.systemd:
+        name: "actions-runner@{{ item.repo }}"
+        state: stopped
+      loop: "{{ github_runner_repos }}"
+      loop_control:
+        label: "{{ item.repo }}"
+  roles:
+    - docker
+  tasks:
+    - name: Refuse to interrupt running CI jobs
+      ansible.builtin.command: pgrep -x Runner.Worker
+      register: rootless_active_jobs
+      changed_when: false
+      failed_when: rootless_active_jobs.rc != 1
+
+    - name: Refuse unknown running containers on the rootful daemon
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker --host unix:///var/run/docker.sock ps --format '{{ '{{.Names}}' }}' | sed '/^penpot-/d'
+      args:
+        executable: /bin/bash
+      register: rootless_other_containers
+      changed_when: false
+      failed_when: rootless_other_containers.stdout | length > 0
+
+    - name: Read both daemon account IDs
+      ansible.builtin.getent:
+        database: passwd
+
+    - name: Read existing Penpot environment without exposing secrets
+      ansible.builtin.slurp:
+        src: "{{ penpot_dir }}/.env"
+      register: rootless_existing_env
+      no_log: true
+
+    - name: Refuse unrelated Penpot configuration changes during migration
+      ansible.builtin.assert:
+        that:
+          - rootless_existing_env.content | b64decode == lookup('ansible.builtin.template', 'roles/penpot/templates/env.j2')
+        fail_msg: Synchronize the encrypted Penpot configuration with the live environment before migrating; do not overwrite live secrets.
+      no_log: true
+
+    - name: Load migration account IDs
+      ansible.builtin.set_fact:
+        rootless_apps_uid: "{{ getent_passwd[docker_apps_user][1] }}"
+        rootless_ci_uid: "{{ getent_passwd[github_runner_user][1] }}"
+
+    - name: Transfer the existing Penpot images to applications Docker
+      ansible.builtin.shell: |
+        set -euo pipefail
+        mapfile -t images < <(docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir | quote }} config --images | sort -u)
+        test -n "${images[*]}"
+        docker --host unix:///var/run/docker.sock image save "${images[@]}" |
+          runuser -u {{ docker_apps_user | quote }} -- docker --host unix:///run/user/{{ rootless_apps_uid }}/docker.sock image load --quiet
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Create private migration backup parent
+      ansible.builtin.file:
+        path: /srv/backups/rootless-migration
+        state: directory
+        mode: "0700"
+
+    - name: Create a unique rollback directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: /srv/backups/rootless-migration
+        prefix: migration.
+      register: rootless_rollback
+
+    - name: Preserve existing service configuration for rollback
+      ansible.builtin.shell: |
+        set -euo pipefail
+        paths=(usr/local/bin/penpot-backup etc/systemd/system/penpot-backup.service etc/systemd/system/actions-runner@.service)
+        for path in etc/systemd/system/penpot.service; do
+          if test -f "/$path"; then paths+=("$path"); fi
+        done
+        tar --create --gzip --file {{ (rootless_rollback.path + '/services.tar.gz') | quote }} --directory / "${paths[@]}"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Cut over with rollback on application failure
+      block:
+        - name: Pause runners before the cutover
+          ansible.builtin.systemd:
+            name: "actions-runner@{{ item.repo }}"
+            state: stopped
+          loop: "{{ github_runner_repos }}"
+          loop_control:
+            label: "{{ item.repo }}"
+
+        - name: Pause scheduled backups
+          ansible.builtin.systemd:
+            name: penpot-backup.timer
+            state: stopped
+
+        - name: Stop Penpot writers before taking the final backup
+          ansible.builtin.command: >-
+            docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir | quote }}
+            stop penpot-frontend penpot-backend penpot-exporter
+          changed_when: true
+
+        - name: Make a final database and assets backup
+          ansible.builtin.command: /usr/local/bin/penpot-backup
+          changed_when: true
+          environment:
+            DOCKER_HOST: unix:///var/run/docker.sock
+
+        - name: Record database row counts for comparison
+          ansible.builtin.command:
+            argv:
+              - docker
+              - --host
+              - unix:///var/run/docker.sock
+              - compose
+              - --project-directory
+              - "{{ penpot_dir }}"
+              - exec
+              - -T
+              - penpot-postgres
+              - psql
+              - -U
+              - penpot
+              - -Atc
+              - SELECT (SELECT count(*) FROM profile), (SELECT count(*) FROM project), (SELECT count(*) FROM file);
+          register: rootless_database_before
+          changed_when: false
+
+        - name: Stop the rootful Penpot stack without deleting its data
+          ansible.builtin.command: "docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir }} stop"
+          changed_when: true
+
+        - name: Archive the stopped Penpot project with original numeric ownership
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --create
+              - --gzip
+              - --acls
+              - --xattrs
+              - --numeric-owner
+              - --file
+              - "{{ rootless_rollback.path }}/penpot.tar.gz"
+              - --directory
+              - "{{ penpot_dir | dirname }}"
+              - "{{ penpot_dir | basename }}"
+          changed_when: true
+          register: rootless_data_snapshot
+
+        - name: Verify the rollback archive before changing ownership
+          ansible.builtin.command: "gzip --test {{ rootless_rollback.path }}/penpot.tar.gz"
+          changed_when: false
+
+        - name: Remap existing container-owned Penpot data
+          ansible.builtin.shell: |
+            set -euo pipefail
+            test -z "$(find {{ (penpot_dir + '/assets') | quote }} -xdev \( ! -uid 1001 -o ! -gid 1001 \) -printf unexpected -quit)"
+            test -z "$(find {{ (penpot_dir + '/postgres') | quote }} -xdev \( ! -uid 999 -o ! -gid 999 \) -printf unexpected -quit)"
+            find {{ (penpot_dir + '/assets') | quote }} -xdev -uid 1001 -exec chown {{ docker_apps_subuid | int + 1000 }} {} +
+            find {{ (penpot_dir + '/assets') | quote }} -xdev -gid 1001 -exec chgrp {{ docker_apps_subuid | int + 1000 }} {} +
+            find {{ (penpot_dir + '/postgres') | quote }} -xdev -uid 999 -exec chown {{ docker_apps_subuid | int + 998 }} {} +
+            find {{ (penpot_dir + '/postgres') | quote }} -xdev -gid 999 -exec chgrp {{ docker_apps_subuid | int + 998 }} {} +
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Deploy Penpot lifecycle and backups on applications Docker
+          ansible.builtin.include_role:
+            name: penpot
+
+        - name: Wait for Penpot HTTP health
+          ansible.builtin.uri:
+            url: "http://{{ tools_ip }}:{{ penpot_port }}/"
+            status_code: 200
+          register: rootless_penpot_health
+          retries: 30
+          delay: 2
+          until: rootless_penpot_health is succeeded
+
+        - name: Compare database row counts after migration
+          ansible.builtin.command:
+            argv:
+              - docker
+              - --host
+              - "unix:///run/user/{{ rootless_apps_uid }}/docker.sock"
+              - compose
+              - --project-directory
+              - "{{ penpot_dir }}"
+              - exec
+              - -T
+              - penpot-postgres
+              - psql
+              - -U
+              - penpot
+              - -Atc
+              - SELECT (SELECT count(*) FROM profile), (SELECT count(*) FROM project), (SELECT count(*) FROM file);
+          become_user: "{{ docker_apps_user }}"
+          become: true
+          register: rootless_database_after
+          changed_when: false
+          failed_when: rootless_database_after.stdout != rootless_database_before.stdout
+
+        - name: Verify the rootless backup service
+          ansible.builtin.systemd:
+            name: penpot-backup.service
+            state: started
+
+      rescue:
+        - name: Stop rootless Penpot before restoring the old stack
+          ansible.builtin.command: "docker --host unix:///run/user/{{ rootless_apps_uid }}/docker.sock compose --project-directory {{ penpot_dir }} stop"
+          become_user: "{{ docker_apps_user }}"
+          become: true
+          changed_when: true
+          failed_when: false
+
+        - name: Preserve failed migration data and restore the snapshot
+          ansible.builtin.shell: |
+            set -euo pipefail
+            mv {{ penpot_dir | quote }} {{ (penpot_dir + '.rootless-failed-' + (rootless_rollback.path | basename)) | quote }}
+            tar --extract --gzip --acls --xattrs --numeric-owner \
+              --file {{ (rootless_rollback.path + '/penpot.tar.gz') | quote }} --directory {{ penpot_dir | dirname | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+          when: rootless_data_snapshot is defined and rootless_data_snapshot is succeeded
+
+        - name: Restore original service configuration
+          ansible.builtin.unarchive:
+            src: "{{ rootless_rollback.path }}/services.tar.gz"
+            dest: /
+            remote_src: true
+
+        - name: Stop and disable the newly introduced Penpot service
+          ansible.builtin.systemd:
+            name: penpot.service
+            state: stopped
+            enabled: false
+            daemon_reload: true
+          failed_when: false
+
+        - name: Restore the rootful Penpot stack
+          ansible.builtin.command: "docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir }} up -d"
+          changed_when: true
+
+        - name: Restore the runner's original rootful Docker context
+          ansible.builtin.command: docker context use default
+          become: true
+          become_user: "{{ github_runner_user }}"
+          changed_when: true
+
+        - name: Resume backups and original runners
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: started
+          loop: "{{ ['penpot-backup.timer'] + (github_runner_repos | map(attribute='repo') | map('regex_replace', '^', 'actions-runner@') | list) }}"
+
+        - name: Report the failed cutover and retained rollback backup
+          ansible.builtin.fail:
+            msg: "Rootless application migration failed; the original stack was restored. Private rollback files remain at {{ rootless_rollback.path }}."
+
+    - name: Refresh both account IDs after the application role
+      ansible.builtin.getent:
+        database: passwd
+
+    - name: Disable rootful Docker and activate the CI compatibility socket
+      ansible.builtin.include_tasks: roles/docker/tasks/rootless-cutover.yml
+
+    - name: Repair old root-owned CI workspace files while runners are stopped
+      ansible.builtin.command: "find {{ github_runner_home }} -xdev -user root -exec chown {{ github_runner_user }}:{{ github_runner_user }} {} +"
+      changed_when: true
+
+    - name: Deploy runners using CI rootless Docker
+      ansible.builtin.include_role:
+        name: github-runner
+
+    - name: Report the retained rollback directory
+      ansible.builtin.debug:
+        msg: "Migration complete. Private rollback files: {{ rootless_rollback.path }}. Keep them until Penpot and CI have been verified."

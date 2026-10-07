@@ -8,4 +8,7 @@
     project_src: "{{ penpot_dir }}"
     remove_orphans: true
     state: restarted
+    docker_host: "unix:///run/user/{{ getent_passwd[docker_apps_user][1] }}/docker.sock"
+  become: true
+  become_user: "{{ docker_apps_user }}"
   when: not ansible_check_mode

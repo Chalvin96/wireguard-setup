@@ -1,0 +1,230 @@
+---
+- name: Check rootful Docker before changing an existing installation
+  ansible.builtin.command: docker --host unix:///var/run/docker.sock info --format '{{ "{{json .SecurityOptions}}" }}'
+  register: docker_existing_info
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: List containers on an existing rootful daemon
+  ansible.builtin.command: docker --host unix:///var/run/docker.sock ps --all --quiet
+  register: docker_existing_containers
+  changed_when: false
+  check_mode: false
+  when:
+    - docker_existing_info.rc == 0
+    - "'rootless' not in docker_existing_info.stdout"
+
+- name: Require the migration playbook for populated rootful installations
+  ansible.builtin.assert:
+    that:
+      - docker_rootless_migration | bool or docker_existing_containers.stdout | default('') | length == 0
+    fail_msg: Existing rootful containers require ansible/migrate-rootless.yml; do not stop or replace their daemon automatically.
+
+- name: Create rootless daemon accounts
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    home: "{{ item.home }}"
+    shell: /bin/bash
+    system: true
+    create_home: true
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Require distinct accounts and nonoverlapping subordinate ID ranges
+  ansible.builtin.assert:
+    that:
+      - docker_apps_user != github_runner_user
+      - docker_apps_home != github_runner_home
+      - docker_apps_subuid | int + 65536 <= docker_ci_subuid | int or docker_ci_subuid | int + 65536 <= docker_apps_subuid | int
+
+- name: Protect daemon account homes
+  ansible.builtin.file:
+    path: "{{ item.home }}"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Read account IDs
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Read existing subordinate ID assignments
+  ansible.builtin.command: "awk -F: '{print $1, $2, $3}' {{ item }}"
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+  register: docker_subordinate_ids
+  changed_when: false
+  check_mode: false
+
+- name: Validate subordinate ID ranges before assigning them
+  ansible.builtin.assert:
+    that:
+      - item.0.subuid | int >= 65536
+      - >-
+        item.0.name == item.1.split()[0] or
+        item.0.subuid | int + 65536 <= item.1.split()[1] | int or
+        item.0.subuid | int >= item.1.split()[1] | int + item.1.split()[2] | int
+      - item.0.name != item.1.split()[0] or (item.0.subuid | int == item.1.split()[1] | int and item.1.split()[2] | int == 65536)
+    fail_msg: Subordinate UID/GID ranges overlap or differ from existing assignments; choose unused ranges, never remap live data.
+  loop: "{{ docker_rootless_accounts | product(docker_subordinate_ids.results | map(attribute='stdout_lines') | flatten) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} / {{ item.1.split()[0] }}"
+
+- name: Assign subordinate UIDs and GIDs
+  ansible.builtin.lineinfile:
+    path: "{{ item.1 }}"
+    regexp: "^{{ item.0.name }}:"
+    line: "{{ item.0.name }}:{{ item.0.subuid }}:65536"
+  loop: "{{ docker_rootless_accounts | product(['/etc/subuid', '/etc/subgid']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+
+- name: Create rootless configuration directories
+  ansible.builtin.file:
+    path: "{{ item.0.home }}/{{ item.1 }}"
+    state: directory
+    owner: "{{ item.0.name }}"
+    group: "{{ item.0.name }}"
+    mode: "0700"
+  loop: "{{ docker_rootless_accounts | product(['.config/docker', '.config/systemd/user']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+
+- name: Configure rootless Docker log rotation
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: "{{ item.home }}/.config/docker/daemon.json"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0600"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart rootless daemons
+
+- name: Create per-account cgroup delegation directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/user@{{ getent_passwd[item.name][1] }}.service.d"
+    state: directory
+    mode: "0755"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Delegate controllers to the rootless user managers
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/user@{{ getent_passwd[item.name][1] }}.service.d/docker.conf"
+    content: |
+      [Service]
+      Delegate=cpu cpuset io memory pids
+    mode: "0644"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd
+
+- name: Create aggregate CI resource limit directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/user-{{ getent_passwd[github_runner_user][1] }}.slice.d"
+    state: directory
+    mode: "0755"
+
+- name: Limit CI processes and containers together
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/user-{{ getent_passwd[github_runner_user][1] }}.slice.d/ci-limits.conf"
+    content: |
+      [Slice]
+      CPUQuota={{ docker_ci_cpu_quota }}
+      MemoryMax={{ docker_ci_memory_max }}
+      TasksMax=4096
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Load delegation configuration before starting user managers
+  ansible.builtin.systemd:
+    daemon_reload: true
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Enable rootless daemon startup without interactive login
+  ansible.builtin.command: "loginctl enable-linger {{ item.name }}"
+  args:
+    creates: "/var/lib/systemd/linger/{{ item.name }}"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Start rootless account user managers
+  ansible.builtin.systemd:
+    name: "user@{{ getent_passwd[item.name][1] }}.service"
+    state: started
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Install rootless Docker user services
+  ansible.builtin.command: dockerd-rootless-setuptool.sh install --force
+  args:
+    creates: "{{ item.home }}/.config/docker/rootless-installed"
+  become: true
+  become_user: "{{ item.name }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.name][1] }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.name][1] }}/bus"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Mark completed rootless Docker installations
+  ansible.builtin.copy:
+    dest: "{{ item.home }}/.config/docker/rootless-installed"
+    content: "Managed rootless Docker installation\n"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0600"
+  loop: "{{ docker_rootless_accounts }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Write per-daemon prune services and timers
+  ansible.builtin.template:
+    src: "{{ item.1 }}.j2"
+    dest: "{{ item.0.home }}/.config/systemd/user/{{ item.1 }}"
+    owner: "{{ item.0.name }}"
+    group: "{{ item.0.name }}"
+    mode: "0644"
+  vars:
+    docker_prune_uid: "{{ getent_passwd[item.0.name][1] }}"
+  loop: "{{ docker_rootless_accounts | product(['docker-prune.service', 'docker-prune.timer']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+
+- name: Start rootless daemons and prune timers
+  ansible.builtin.systemd:
+    scope: user
+    name: "{{ item.1 }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
+  become_user: "{{ item.0.name }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.0.name][1] }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.0.name][1] }}/bus"
+  loop: "{{ docker_rootless_accounts | product(['docker.service', 'docker-prune.timer']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  when: not ansible_check_mode
+
+- name: Flush rootless daemon handlers after their services are installed
+  ansible.builtin.meta: flush_handlers

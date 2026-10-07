@@ -1,0 +1,71 @@
+---
+# Disposable-container fixture only: these are NOT production credentials.
+- name: Test Penpot on the applications rootless daemon
+  hosts: all
+  become: true
+  vars:
+    docker_apps_user: apps
+    docker_apps_subuid: 231072
+    tools_ip: 127.0.0.1
+    edge_ip: 127.0.0.1
+    notify_port: 8025
+    penpot_version: "2.15.4"
+    penpot_postgres_image: postgres:15
+    penpot_valkey_image: valkey/valkey:8.1
+    penpot_port: 9001
+    penpot_public_uri: http://localhost:9001
+    penpot_flags: disable-email-verification enable-prepl-server disable-secure-session-cookies
+    penpot_dir: /srv/penpot
+    penpot_backup_dir: /srv/backups/penpot
+    penpot_backup_keep_days: 7
+    penpot_backup_alert_recipient: alerts@mailrise.lan
+    vault_penpot_secret_key: disposable-test-only-not-a-production-key
+    vault_penpot_postgres_password: disposable-test-only
+  pre_tasks:
+    - name: Reproduce a private existing backup parent
+      ansible.builtin.file:
+        path: /srv/backups
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+  roles:
+    - role: ../ansible/roles/penpot
+  tasks:
+    - name: Check applications cannot list the private backup parent
+      ansible.builtin.command: test -r /srv/backups
+      become_user: apps
+      register: penpot_backup_parent_readable
+      changed_when: false
+      failed_when: penpot_backup_parent_readable.rc != 1
+
+    - name: Wait for test Penpot HTTP health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9001/
+        status_code: 200
+      register: penpot_smoke_health
+      retries: 30
+      delay: 2
+      until: penpot_smoke_health is succeeded
+
+    - name: Exercise the rootless backup service
+      ansible.builtin.systemd:
+        name: penpot-backup.service
+        state: started
+
+    - name: Check MCP is routed but rejects unauthenticated access
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9001/mcp/stream
+        headers:
+          Accept: text/event-stream
+        status_code: [400, 401, 403]
+
+    - name: Check successful backups are present
+      ansible.builtin.find:
+        paths: /srv/backups/penpot
+        patterns: "*.dump,*.tar.gz"
+      register: penpot_smoke_backups
+
+    - name: Assert both database and assets backups were created
+      ansible.builtin.assert:
+        that: penpot_smoke_backups.matched >= 2

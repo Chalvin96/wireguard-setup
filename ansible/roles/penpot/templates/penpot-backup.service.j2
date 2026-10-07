@@ -1,11 +1,13 @@
 # Managed by Ansible
 [Unit]
 Description=Back up Penpot database and assets
-Requires=docker.service
-After=docker.service
+Requires=penpot.service
+After=penpot.service
 RequiresMountsFor={{ penpot_backup_dir }}
 OnFailure=penpot-backup-failed.service
 
 [Service]
 Type=oneshot
+User={{ docker_apps_user }}
+Environment=DOCKER_HOST=unix:///run/user/{{ getent_passwd[docker_apps_user][1] }}/docker.sock
 ExecStart=/usr/local/bin/penpot-backup

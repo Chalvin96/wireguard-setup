@@ -13,3 +13,10 @@ scrape_configs:
     static_configs:
       - targets:
           - "host-gateway:{{ node_exporter_port }}"
+
+  - job_name: sindri
+    static_configs:
+      - targets:
+          - "{{ tools_ip }}:{{ node_exporter_port }}"
+        labels:
+          host: tools-01

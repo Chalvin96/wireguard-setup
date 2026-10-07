@@ -1,10 +1,4 @@
 ---
-# Docker CE for the tools VM. data-root stays at the default /var/lib/docker
-# (boot SSD): image layers and build cache are hot, throwaway data. A weekly
-# prune timer caps their growth. The HDD data disk (/srv) is mounted when the
-# VM is created; this role does not manage disks.
-
-# ── Docker CE ──────────────────────────────────────────────────────────────────
 - name: Install Docker dependencies
   ansible.builtin.apt:
     name:
@@ -30,7 +24,7 @@
   ansible.builtin.command: dpkg --print-architecture
   register: docker_dpkg_arch
   changed_when: false
-  check_mode: false               # read-only; needed to render the repo line in check mode
+  check_mode: false # read-only; needed to render the repo line in check mode
 
 - name: Add Docker apt repository
   ansible.builtin.apt_repository:
@@ -51,55 +45,21 @@
       - containerd.io
       - docker-buildx-plugin
       - docker-compose-plugin
+      - docker-ce-rootless-extras
+      - uidmap
+      - dbus-user-session
+      - slirp4netns
+      - iproute2
+      - acl
     state: present
 
-# ── Daemon config ──────────────────────────────────────────────────────────────
-- name: Ensure /etc/docker exists (before the package creates it)
-  ansible.builtin.file:
-    path: /etc/docker
-    state: directory
-    mode: "0755"
+- name: Configure separate applications and CI daemons
+  ansible.builtin.include_tasks: rootless.yml
 
-- name: Write Docker daemon.json (log rotation)
-  ansible.builtin.template:
-    src: daemon.json.j2
-    dest: /etc/docker/daemon.json
-    mode: "0644"
-  notify: Restart docker
+- name: Disable rootful Docker and provide the CI compatibility socket
+  ansible.builtin.include_tasks: rootless-cutover.yml
+  when: not docker_rootless_migration | bool
 
-- name: Enable Docker
-  ansible.builtin.systemd:
-    name: docker
-    enabled: true
-    state: started
-  when: not ansible_check_mode   # unit/file is only created in a real run
-
-# ── Weekly prune ───────────────────────────────────────────────────────────────
-- name: Write docker-prune service
-  ansible.builtin.template:
-    src: docker-prune.service.j2
-    dest: /etc/systemd/system/docker-prune.service
-    mode: "0644"
-  notify: Reload systemd
-
-- name: Write docker-prune timer
-  ansible.builtin.template:
-    src: docker-prune.timer.j2
-    dest: /etc/systemd/system/docker-prune.timer
-    mode: "0644"
-  notify: Reload systemd
-
-- name: Flush handlers so the timer unit is loaded
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable docker-prune timer
-  ansible.builtin.systemd:
-    name: docker-prune.timer
-    enabled: true
-    state: started
-  when: not ansible_check_mode   # unit/file is only created in a real run
-
-# ── Node Exporter (scraped by monitoring-01) ───────────────────────────────────
 - name: Install Node Exporter
   ansible.builtin.apt:
     name: prometheus-node-exporter
@@ -110,4 +70,4 @@
     name: prometheus-node-exporter
     enabled: true
     state: started
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run

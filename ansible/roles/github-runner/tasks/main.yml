@@ -1,26 +1,16 @@
 ---
-# Self-hosted GitHub Actions runners for PRIVATE repositories only.
-# Never list a public repository here: a pull request from a fork would run
-# arbitrary code on this LAN.
-#
-# One runner instance per repository (personal accounts cannot share a runner
-# across repositories). Instances live on the boot SSD under
-# {{ github_runner_home }}; each registers once using a short-lived token
-# fetched with the fine-grained PAT from the vault.
-
-# ── Runner user ────────────────────────────────────────────────────────────────
-# Membership in the docker group is root-equivalent on this host. Acceptable
-# for private repositories whose code you write; see README for the isolation
-# upgrade path.
 - name: Require unique repository names for runner instances
   ansible.builtin.assert:
     that:
       - github_runner_repos | map(attribute='repo') | list | unique | length == github_runner_repos | length
     fail_msg: Runner directories and service instances require unique repository names, including across owners.
 
-- name: Install ACL support for unprivileged runner tasks
+- name: Install runner provisioning and Node runtime dependencies
   ansible.builtin.apt:
-    name: acl
+    name:
+      - acl
+      - xz-utils
+      - libatomic1
     state: present
     update_cache: true
 
@@ -29,10 +19,15 @@
     name: "{{ github_runner_user }}"
     home: "{{ github_runner_home }}"
     shell: /bin/bash
-    groups: docker
-    append: true
+    groups: ""
+    append: false
     system: true
     create_home: true
+
+- name: Read runner account ID
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ github_runner_user }}"
 
 - name: Create runner download directory
   ansible.builtin.file:
@@ -51,7 +46,9 @@
     group: "{{ github_runner_user }}"
     mode: "0644"
 
-# ── Per-repository instances ───────────────────────────────────────────────────
+- name: Seed the shared tool cache to avoid repeated GitHub downloads
+  ansible.builtin.include_tasks: tool-cache.yml
+
 - name: Create runner instance directories
   ansible.builtin.file:
     path: "{{ github_runner_home }}/{{ item.repo }}"
@@ -74,10 +71,8 @@
   loop: "{{ github_runner_repos }}"
   loop_control:
     label: "{{ item.owner }}/{{ item.repo }}"
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run
 
-# The upstream script apt-installs the .NET runtime libraries; it is
-# idempotent, so it is not reported as a change.
 - name: Install runner OS dependencies
   ansible.builtin.command: ./bin/installdependencies.sh
   args:
@@ -137,13 +132,13 @@
   when: item is not skipped
   no_log: true
 
-# ── systemd ────────────────────────────────────────────────────────────────────
 - name: Write templated runner unit
   ansible.builtin.template:
     src: actions-runner@.service.j2
     dest: /etc/systemd/system/actions-runner@.service
     mode: "0644"
   notify: Reload systemd
+  register: github_runner_unit
 
 - name: Flush handlers so the unit is loaded
   ansible.builtin.meta: flush_handlers
@@ -152,8 +147,8 @@
   ansible.builtin.systemd:
     name: "actions-runner@{{ item.repo }}"
     enabled: true
-    state: started
+    state: "{{ 'restarted' if github_runner_unit.changed else 'started' }}"
   loop: "{{ github_runner_repos }}"
   loop_control:
     label: "{{ item.owner }}/{{ item.repo }}"
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run

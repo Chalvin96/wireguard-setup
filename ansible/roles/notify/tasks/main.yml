@@ -11,7 +11,7 @@
   ansible.builtin.apt:
     name:
       - python3-venv
-      - python3-packaging   # required by ansible.builtin.pip on the target
+      - python3-packaging # required by ansible.builtin.pip on the target
       - nftables
     state: present
     update_cache: true
@@ -100,14 +100,14 @@
     path: /etc/nftables.conf
     line: 'include "/etc/nftables.d/mailrise.nft"'
     state: present
-  when: not ansible_check_mode   # file comes from the nftables package
+  when: not ansible_check_mode # file comes from the nftables package
 
 - name: Enable mailrise-firewall
   ansible.builtin.systemd:
     name: mailrise-firewall
     enabled: true
     daemon_reload: true
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run
 
 - name: Flush handlers so the firewall rule and unit are current
   ansible.builtin.meta: flush_handlers
@@ -119,7 +119,7 @@
     enabled: true
     state: started
     daemon_reload: true
-  when: not ansible_check_mode   # unit/file is only created in a real run
+  when: not ansible_check_mode # unit/file is only created in a real run
 
 # systemd reports "started" even if the process exits a moment later.
 - name: Verify Mailrise is accepting SMTP

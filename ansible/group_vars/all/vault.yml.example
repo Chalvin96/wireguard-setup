@@ -1,16 +1,16 @@
 # Copy to vault.yml and encrypt with: ansible-vault encrypt vault.yml
 # ── WireGuard ──────────────────────────────────────────────────────────────────
 vault_wireguard_server_private_key: "changeme-generate-with-wg-genkey"
-vault_wireguard_server_public_key: "changeme-generate-with-wg-pubkey"  # server's public key (distributed to clients)
-vault_wireguard_client_private_key: "changeme-generate-with-wg-genkey"  # Mikrotik WireGuard private key (used on first provisioning)
-vault_wireguard_client_public_key: "changeme-generate-with-wg-pubkey"  # Mikrotik WireGuard public key (asserted by the verify task)
+vault_wireguard_server_public_key: "changeme-generate-with-wg-pubkey" # server's public key (distributed to clients)
+vault_wireguard_client_private_key: "changeme-generate-with-wg-genkey" # Mikrotik WireGuard private key (used on first provisioning)
+vault_wireguard_client_public_key: "changeme-generate-with-wg-pubkey" # Mikrotik WireGuard public key (asserted by the verify task)
 
 # ── fail2ban / vps-blocklist ───────────────────────────────────────────────────
 vault_vps_ban_ssh_private_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   changeme
   -----END OPENSSH PRIVATE KEY-----
-vault_vps_ban_ssh_public_key: "changeme-ssh-ed25519 AAAA... fail2ban-ban-ip"  # public key written to VPS authorized_keys
+vault_vps_ban_ssh_public_key: "changeme-ssh-ed25519 AAAA... fail2ban-ban-ip" # public key written to VPS authorized_keys
 
 # ── Monitoring (Grafana) ───────────────────────────────────────────────────────
 vault_grafana_admin_user: "changeme-admin-username"

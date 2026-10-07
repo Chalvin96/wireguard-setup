@@ -1,0 +1,21 @@
+# Managed by Ansible
+[Unit]
+Description=Penpot application stack (rootless Docker)
+Requires=user@{{ getent_passwd[docker_apps_user][1] }}.service
+After=network-online.target user@{{ getent_passwd[docker_apps_user][1] }}.service
+Wants=network-online.target
+RequiresMountsFor={{ penpot_dir }}
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User={{ docker_apps_user }}
+Environment=DOCKER_HOST=unix:///run/user/{{ getent_passwd[docker_apps_user][1] }}/docker.sock
+ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+ExecStart=/usr/bin/docker compose --project-directory {{ penpot_dir }} up -d --remove-orphans
+ExecStop=/usr/bin/docker compose --project-directory {{ penpot_dir }} stop
+TimeoutStartSec=5min
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target

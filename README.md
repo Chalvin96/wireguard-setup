@@ -94,12 +94,12 @@ outside Ansible's control.
 
 ## Node Inventory
 
-| Node | Ansible host | Runs |
-|------|--------------|------|
-| **VPS** (Hetzner/DigitalOcean) | `ingress-01` | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH) |
-| **Mini PC** | `edge-01` | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail, Mailrise |
-| **Monitoring VM** | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose) |
-| **Tools VM** (Proxmox) | `tools-01` | Penpot, self-hosted GitHub Actions runners, node-exporter |
+| Node                           | Ansible host    | Runs                                                                                         |
+| ------------------------------ | --------------- | -------------------------------------------------------------------------------------------- |
+| **VPS** (Hetzner/DigitalOcean) | `ingress-01`    | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH)              |
+| **Mini PC**                    | `edge-01`       | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail, Mailrise |
+| **Monitoring VM**              | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose)                                                   |
+| **Tools VM** (Proxmox)         | `tools-01`      | Penpot, self-hosted GitHub Actions runners, node-exporter                                    |
 
 ## Security Design
 
@@ -112,9 +112,10 @@ scanners, CVE probes, and flooding. Scenarios are community-maintained and
 auto-update.
 
 Two **nftables bouncers** enforce decisions:
+
 - **Edge bouncer** (Mini PC) — drops banned IPs before they reach Caddy.
 - **VPS bouncer** — queries the edge LAPI over the WireGuard tunnel and drops IPs
-  at the public ingress *before* they waste tunnel bandwidth.
+  at the public ingress _before_ they waste tunnel bandwidth.
 
 **blocklist-import** — a Docker container on the edge pulls 13 proactive feeds
 daily (Spamhaus DROP/eDROP, Firehol L1/L2, DShield, Emerging Threats, Talos,
@@ -123,19 +124,19 @@ carry a 24-hour TTL.
 
 **LAPI hardening** — the socket binds to `0.0.0.0` but an nftables chain
 (`crowdsec-lapi`) accepts only `127.0.0.1` and the VPS WireGuard IP
-(`10.8.0.1`). The rule is applied *before* CrowdSec starts to close the window.
+(`10.8.0.1`). The rule is applied _before_ CrowdSec starts to close the window.
 
 ### fail2ban — SSH brute-force (both nodes)
 
 SSH-only, incremental banning via `nftables[type=allports]`:
 
 | Offence | Ban duration |
-|---------|--------------|
-| 1st | 5 min |
-| 2nd | 25 min |
-| 3rd | 2.5 h |
-| 4th | 5 h |
-| 5th+ | 25 h |
+| ------- | ------------ |
+| 1st     | 5 min        |
+| 2nd     | 25 min       |
+| 3rd     | 2.5 h        |
+| 4th     | 5 h          |
+| 5th+    | 25 h         |
 
 ### General
 
@@ -199,13 +200,13 @@ git clone git@github.com:Chalvin96/wireguard-setup.git && cd wireguard-setup
 Put the password in `.vault_password` (gitignored) to skip the prompt;
 otherwise it is asked once per run and kept only in RAM.
 
-| Command | Purpose |
-|---------|---------|
-| `./run.sh edit-config` | Create (from `config.yml.example`) or edit the encrypted `config.yml` |
-| `./run.sh edit-vault` | Edit the encrypted `vault.yml` |
+| Command                                                          | Purpose                                                                                                                               |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `./run.sh edit-config`                                           | Create (from `config.yml.example`) or edit the encrypted `config.yml`                                                                 |
+| `./run.sh edit-vault`                                            | Edit the encrypted `vault.yml`                                                                                                        |
 | `./run.sh bootstrap --limit <host> -e ansible_user=<user> -k -K` | New host: create `deploy`, install keys, disable password SSH (`-e`, not `-u`: the inventory's `ansible_user: deploy` overrides `-u`) |
-| `./run.sh bootstrap` | Authorize machines listed in `deploy_authorized_keys` (run from an authorized machine) |
-| `./run.sh lint` | ansible-lint with the CI pins |
+| `./run.sh bootstrap`                                             | Authorize machines listed in `deploy_authorized_keys` (run from an authorized machine)                                                |
+| `./run.sh lint`                                                  | ansible-lint with the CI pins                                                                                                         |
 
 **Adding a control machine:** append its public key to `deploy_authorized_keys`
 (`./run.sh edit-config`), run `./run.sh bootstrap` from a machine that already
@@ -236,29 +237,32 @@ Existing VMs are not adopted automatically; import and review their plans first.
 
 A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
 
-| Disk | Storage | Mount | Holds |
-|------|---------|-------|-------|
-| `scsi0` 64 GB | SSD (`ssd=1`, `discard=on`) | `/` | OS, `/var/lib/docker`, runner workspaces (hot, throwaway) |
-| `scsi1` 128 GB | HDD | `/srv` | Penpot data, backups (persistent, bulky) |
+| Disk           | Storage                     | Mount  | Holds                                               |
+| -------------- | --------------------------- | ------ | --------------------------------------------------- |
+| `scsi0` 64 GB  | SSD (`ssd=1`, `discard=on`) | `/`    | OS, rootless Docker images/cache, runner workspaces |
+| `scsi1` 128 GB | HDD                         | `/srv` | Penpot data, backups (persistent, bulky)            |
 
 Mount the HDD at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
 VM; the roles assume it is already mounted.
 
-- **docker** installs Docker CE with log rotation and a weekly prune timer
-  (build cache capped at `docker_prune_keep_storage`).
+- **docker** installs separate rootless Docker daemons for applications (`apps`)
+  and CI (`github-runner`), each with log rotation and a weekly prune timer.
 - **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
   `pg_dump` + assets archive into `/srv/backups/penpot`.
 - **github-runner** registers one runner per repository in
   `github_runner_repos` using a fine-grained PAT from the vault.
 
 > **Private repositories only.** A self-hosted runner on a public repository
-> runs code from fork pull requests on this LAN. The runner user is in the
-> `docker` group, which is root-equivalent on the VM: any workflow step can
-> read Penpot's secrets (`docker inspect`), its data in `/srv/penpot`, and its
-> backups, and job containers are not bound by the runner's CPU/memory caps.
-> This is accepted for private repositories you control; for stronger
-> isolation, move runners to a dedicated VM with nftables egress rules that
-> drop LAN destinations.
+> runs code from fork pull requests on this LAN. CI has its own rootless daemon
+> and cannot manage the applications daemon or read Penpot's private project
+> directory. Both runners and their containers share an aggregate CPU/memory
+> limit. This is not VM-strength isolation: the kernel, disk, and LAN remain
+> shared. Use a dedicated VM and network restrictions for untrusted workloads.
+
+See [rootless Docker operations and migration](docs/rootless-docker.md) before
+upgrading an existing rootful installation. Future trusted services can share
+the applications daemon with Penpot, using separate Compose projects and
+explicit shared networks only when communication is needed.
 
 ```bash
 ./run.sh bootstrap --limit tools-01 -e ansible_user=<your_user> -k -K
@@ -273,6 +277,32 @@ Penpot backend, change the database role password with an interactive `psql`
 credential available for rollback until login succeeds. Do not put the password
 in shell arguments or logs. Backups share the data disk; copy a verified backup
 off the VM for protection against disk loss.
+
+## Sindri monitoring
+
+The monitoring VM scrapes tools-01's existing Node Exporter. In Grafana, open
+**Sindri — Tools VM** (`/d/sindri-tools`) for availability, uptime, CPU, memory,
+SSD/HDD usage, and network traffic. This is host monitoring; it does not claim
+that Penpot requests or GitHub workflow jobs are successful.
+
+## Contributor setup
+
+Use Node.js 22 and `uv` on the control machine. Install the local Git hooks once:
+
+```bash
+uv tool install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+Prettier formats YAML, JSON, and Markdown when committing; Gitleaks scans staged
+changes for secrets. Both versions are pinned. Encrypted vault files and runtime
+artifacts are excluded from formatting. Pre-commit manages the hook environments,
+so you do not need to install Prettier or Gitleaks globally for these hooks.
+
+Run `./run.sh lint` for Ansible checks, `bash tests/test-penpot-backup.sh` for backup
+failure handling, and `tofu -chdir=infra/proxmox validate` after `tofu init` for VM
+configuration. Formatting is also checked in GitHub Actions.
 
 ## Repository Layout
 
@@ -309,35 +339,35 @@ roles/
 See [`ansible/group_vars/all/vault.yml.example`](ansible/group_vars/all/vault.yml.example)
 for the full list. Highlights:
 
-| Variable | Purpose |
-|----------|---------|
-| `vault_wireguard_server_private_key` | WireGuard server private key |
-| `vault_wireguard_server_public_key` | Server public key (distributed to clients) |
-| `vault_wireguard_client_private_key` | Mikrotik WireGuard private key (used on first provisioning) |
-| `vault_wireguard_client_public_key` | Mikrotik WireGuard public key (asserted by the verify task) |
-| `vault_vps_ban_ssh_private_key` | Key for the emergency `banagent` command |
-| `vault_vps_ban_ssh_public_key` | Public half (installed in banagent `authorized_keys`) |
-| `vault_grafana_admin_user` / `..._password` | Grafana admin credentials |
-| `vault_grafana_discord_webhook` | Discord webhook for disk alerts |
-| `vault_glitchtip_secret_key` | Django secret key for the GlitchTip instance |
-| `vault_glitchtip_postgres_password` | URL-safe PostgreSQL password for GlitchTip |
-| `vault_glitchtip_email_url` | SMTP or `consolemail://` transport for GlitchTip mail |
-| `vault_glitchtip_default_from_email` | Sender address used by GlitchTip |
-| `vault_crowdsec_vps_bouncer_key` | Pre-shared key for the VPS CrowdSec bouncer |
-| `vault_crowdsec_edge_bouncer_key` | Pre-shared key for the edge CrowdSec bouncer |
-| `vault_crowdsec_machine_password` | Password for the blocklist-import machine account |
-| `vault_notify_discord_webhooks` | Channel → Discord webhook map for Mailrise |
-| `vault_penpot_secret_key` / `vault_penpot_postgres_password` | Penpot secret key and database password |
-| `vault_github_runner_pat` | Fine-grained PAT (Administration: write) used to fetch runner registration tokens |
+| Variable                                                     | Purpose                                                                           |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `vault_wireguard_server_private_key`                         | WireGuard server private key                                                      |
+| `vault_wireguard_server_public_key`                          | Server public key (distributed to clients)                                        |
+| `vault_wireguard_client_private_key`                         | Mikrotik WireGuard private key (used on first provisioning)                       |
+| `vault_wireguard_client_public_key`                          | Mikrotik WireGuard public key (asserted by the verify task)                       |
+| `vault_vps_ban_ssh_private_key`                              | Key for the emergency `banagent` command                                          |
+| `vault_vps_ban_ssh_public_key`                               | Public half (installed in banagent `authorized_keys`)                             |
+| `vault_grafana_admin_user` / `..._password`                  | Grafana admin credentials                                                         |
+| `vault_grafana_discord_webhook`                              | Discord webhook for disk alerts                                                   |
+| `vault_glitchtip_secret_key`                                 | Django secret key for the GlitchTip instance                                      |
+| `vault_glitchtip_postgres_password`                          | URL-safe PostgreSQL password for GlitchTip                                        |
+| `vault_glitchtip_email_url`                                  | SMTP or `consolemail://` transport for GlitchTip mail                             |
+| `vault_glitchtip_default_from_email`                         | Sender address used by GlitchTip                                                  |
+| `vault_crowdsec_vps_bouncer_key`                             | Pre-shared key for the VPS CrowdSec bouncer                                       |
+| `vault_crowdsec_edge_bouncer_key`                            | Pre-shared key for the edge CrowdSec bouncer                                      |
+| `vault_crowdsec_machine_password`                            | Password for the blocklist-import machine account                                 |
+| `vault_notify_discord_webhooks`                              | Channel → Discord webhook map for Mailrise                                        |
+| `vault_penpot_secret_key` / `vault_penpot_postgres_password` | Penpot secret key and database password                                           |
+| `vault_github_runner_pat`                                    | Fine-grained PAT (Administration: write) used to fetch runner registration tokens |
 
 ## Skills Demonstrated
 
-| Area | Implementation |
-|------|----------------|
+| Area                   | Implementation                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
 | Infrastructure as Code | Idempotent Ansible roles, inventory groups, FQCN modules, agentless RouterOS provisioning |
-| Networking | WireGuard VPN, HAProxy TCP mode, PROXY Protocol v2, nftables |
-| Security | CrowdSec detection, proactive blocklist feeds, fail2ban, Ansible Vault |
-| Threat intelligence | 13-feed blocklist-import, CrowdSec Hub scenarios |
-| Observability | Loki + Prometheus + Grafana, Discord alerting |
-| Secrets management | Ansible Vault AES-256, gitignored configs, `.example` templates |
-| CI | GitHub Actions `ansible-lint` (production profile, 0 failures) |
+| Networking             | WireGuard VPN, HAProxy TCP mode, PROXY Protocol v2, nftables                              |
+| Security               | CrowdSec detection, proactive blocklist feeds, fail2ban, Ansible Vault                    |
+| Threat intelligence    | 13-feed blocklist-import, CrowdSec Hub scenarios                                          |
+| Observability          | Loki + Prometheus + Grafana, Discord alerting                                             |
+| Secrets management     | Ansible Vault AES-256, gitignored configs, `.example` templates                           |
+| CI                     | GitHub Actions `ansible-lint` (production profile, 0 failures)                            |

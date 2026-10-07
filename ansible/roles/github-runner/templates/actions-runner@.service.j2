@@ -2,19 +2,24 @@
 [Unit]
 Description=GitHub Actions runner (%i)
 Wants=network-online.target
-After=network-online.target docker.service
+Requires=user@{{ getent_passwd[github_runner_user][1] }}.service
+After=network-online.target user@{{ getent_passwd[github_runner_user][1] }}.service
 
 [Service]
 User={{ github_runner_user }}
+Slice=user-{{ getent_passwd[github_runner_user][1] }}.slice
+Environment=DOCKER_HOST=unix:///run/user/{{ getent_passwd[github_runner_user][1] }}/docker.sock
+Environment=RUNNER_TOOL_CACHE={{ github_runner_tool_cache }}
+ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 WorkingDirectory={{ github_runner_home }}/%i
 ExecStart={{ github_runner_home }}/%i/run.sh
 Restart=always
 RestartSec=10
-KillMode=process
+KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=5min
-# Caps processes the runner spawns directly (npm, uv, pytest). Containers
-# started through the Docker daemon are NOT covered by these limits.
+# Per-instance caps; the user slice also caps both runners and CI containers
+# together, including containers started through the rootless daemon.
 CPUQuota={{ github_runner_cpu_quota }}
 MemoryMax={{ github_runner_memory_max }}
 

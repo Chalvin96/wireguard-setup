@@ -5,7 +5,7 @@
 # Authorize a key: ./run.sh bootstrap   (from a machine already authorized as deploy)
 # Prerequisites: ansible-galaxy collection install -r requirements.yml
 - name: Bootstrap deploy user
-  hosts: 'all:!mikrotik'
+  hosts: "all:!mikrotik"
   gather_facts: false
   become: true
   vars:

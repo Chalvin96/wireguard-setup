@@ -13,6 +13,19 @@
   roles:
     - role: ../ansible/roles/docker
   tasks:
+    - name: Read rootless user manager mount requirements
+      ansible.builtin.command: "systemctl show user@{{ getent_passwd[item.name][1] }}.service --property=RequiresMountsFor --value"
+      loop: "{{ docker_rootless_accounts }}"
+      register: rootless_home_mounts
+      changed_when: false
+
+    - name: Assert user managers wait for their data mounts
+      ansible.builtin.assert:
+        that: item.item.home in item.stdout.split()
+      loop: "{{ rootless_home_mounts.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
     - name: Check both rootless daemons
       ansible.builtin.command: "docker --host unix:///run/user/{{ getent_passwd[item.name][1] }}/docker.sock info --format '{{ '{{json .SecurityOptions}}' }}'"
       become_user: "{{ item.name }}"

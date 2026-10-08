@@ -237,13 +237,17 @@ Existing VMs are not adopted automatically; import and review their plans first.
 
 A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
 
-| Disk           | Storage                     | Mount  | Holds                                               |
-| -------------- | --------------------------- | ------ | --------------------------------------------------- |
-| `scsi0` 64 GB  | SSD (`ssd=1`, `discard=on`) | `/`    | OS, rootless Docker images/cache, runner workspaces |
-| `scsi1` 128 GB | HDD                         | `/srv` | Penpot data, backups (persistent, bulky)            |
+| Disk           | Storage                     | Mount  | Holds                                                              |
+| -------------- | --------------------------- | ------ | ------------------------------------------------------------------ |
+| `scsi0` 64 GB  | SSD (`ssd=1`, `discard=on`) | `/`    | OS, packages and system logs                                       |
+| `scsi1` 128 GB | HDD                         | `/srv` | Penpot data/backups, Docker data/cache and runner homes/workspaces |
 
 Mount the HDD at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
 VM; the roles assume it is already mounted.
+
+Bind the heavy `/var/lib` directories from `/srv/heavy-data` as described in
+[the storage procedure](docs/rootless-docker.md). Existing hosts require a
+maintenance copy and verification; do not mount over live data.
 
 - **docker** installs separate rootless Docker daemons for applications (`apps`)
   and CI (`github-runner`), each with log rotation and a weekly prune timer.

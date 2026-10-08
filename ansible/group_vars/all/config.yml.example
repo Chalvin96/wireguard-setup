@@ -86,7 +86,7 @@ docker_log_max_file: "3"
 docker_prune_keep_storage: "20GB" # build cache kept after the weekly prune
 docker_prune_image_age: "168h" # unused images older than this are removed
 docker_apps_user: "apps" # shared daemon for Penpot and future trusted applications
-docker_apps_home: "/var/lib/apps" # image layers on the boot SSD
+docker_apps_home: "/var/lib/apps" # HDD bind mount from /srv/heavy-data/apps
 docker_apps_subuid: 231072 # 65,536 subordinate UIDs/GIDs; must not overlap existing ranges
 docker_ci_subuid: 296608 # CI has a separate mapping and daemon
 docker_ci_cpu_quota: "300%" # aggregate: both runners AND their containers
@@ -109,7 +109,7 @@ penpot_backup_alert_recipient: "alerts@mailrise.lan" # Mailrise channel for fail
 github_runner_version: "2.337.0"
 github_runner_sha256: "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
 github_runner_user: "github-runner"
-github_runner_home: "/var/lib/actions-runner" # boot SSD: job workspaces are hot I/O
+github_runner_home: "/var/lib/actions-runner" # HDD bind mount from /srv/heavy-data/actions-runner
 github_runner_tool_cache: "{{ github_runner_home }}/_tool" # shared by both runners
 github_runner_node_versions: ["22.23.3", "24.21.0"] # seeded from nodejs.org with SHA-256 verification
 github_runner_labels:

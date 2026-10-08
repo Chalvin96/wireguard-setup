@@ -122,6 +122,9 @@
   ansible.builtin.copy:
     dest: "/etc/systemd/system/user@{{ getent_passwd[item.name][1] }}.service.d/docker.conf"
     content: |
+      [Unit]
+      RequiresMountsFor={{ item.home }}
+
       [Service]
       Delegate=cpu cpuset io memory pids
     mode: "0644"

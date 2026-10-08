@@ -5,9 +5,32 @@ The tools VM has two rootless Docker daemons:
 | Account         | Purpose                                   | Persistent data                   |
 | --------------- | ----------------------------------------- | --------------------------------- |
 | `apps`          | Penpot and future trusted services        | Separate directories under `/srv` |
-| `github-runner` | Private-repository CI and test containers | Runner workspaces on the SSD      |
+| `github-runner` | Private-repository CI and test containers | Runner workspaces on the HDD      |
 
-Each daemon keeps images and build cache in its account's home on the SSD.
+Each daemon keeps images and build cache in its account's home. HDD bind mounts
+back those homes without changing Docker paths or runner registrations:
+
+```fstab
+/srv/heavy-data/apps /var/lib/apps none bind,x-systemd.requires-mounts-for=/srv 0 0
+/srv/heavy-data/actions-runner /var/lib/actions-runner none bind,x-systemd.requires-mounts-for=/srv 0 0
+/srv/heavy-data/docker /var/lib/docker none bind,x-systemd.requires-mounts-for=/srv 0 0
+/srv/heavy-data/containerd /var/lib/containerd none bind,x-systemd.requires-mounts-for=/srv 0 0
+```
+
+Mount `/srv` by UUID first. Set `/srv/heavy-data` to root-owned mode `0711`;
+the apps and runner directories remain owned by their respective accounts with
+mode `0700`. The last two mounts retain the old rootful data for rollback.
+User-manager units require their home mounts before starting. Retained rootful
+Docker/containerd service drop-ins require their respective data mounts too.
+
+For a fresh VM, create the private directories and bind mounts before deploying.
+For an existing VM, pause CI, stop Penpot and both user managers plus containerd,
+copy with `rsync -aHAX --numeric-ids`, and verify with
+`rsync -aHAXnc --numeric-ids --delete --itemize-changes` while writers remain stopped.
+Keep the original SSD directories until mounted services, image/container
+inventories and a Penpot backup pass verification; only then remove the originals.
+HDD I/O is slower than SSD I/O; this placement prioritizes capacity.
+
 Neither account belongs to the root-equivalent `docker` group. Their homes
 and runtime directories are private. Rootful Docker is masked after migration.
 Both daemons start at boot through systemd user services with lingering enabled.
@@ -108,7 +131,7 @@ Persistent runner workspaces remain persistent. This migration does not implemen
 ephemeral runners or guaranteed cancellation cleanup. Use unique Compose project
 names and scope cleanup to each job's disposable resources.
 
-Both runner services use one `RUNNER_TOOL_CACHE` on the SSD. The runner role seeds
+Both runner services use one `RUNNER_TOOL_CACHE` on the HDD. The runner role seeds
 the configured Node versions from `nodejs.org`, verifies the official SHA-256
 checksums and executables, and writes the completion markers expected by
 `actions/setup-node`. Existing workflows requesting those versions can use the

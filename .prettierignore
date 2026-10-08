@@ -1,0 +1,10 @@
+.collections/
+ansible/group_vars/all/config.yml
+ansible/group_vars/all/vault.yml
+ansible/group_vars/all/*.bak-*
+infra/proxmox/.terraform/
+infra/proxmox/.terraform.lock.hcl
+infra/proxmox/*.tfstate*
+infra/proxmox/*.tfvars*
+infra/proxmox/*.tfplan
+log.txt

@@ -1,0 +1,11 @@
+# Managed by Ansible
+[Unit]
+Description=Prune unused Docker images and build cache
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=DOCKER_HOST=unix:///run/user/{{ docker_prune_uid }}/docker.sock
+ExecStart=/usr/bin/docker builder prune --force --keep-storage {{ docker_prune_keep_storage }}
+ExecStart=/usr/bin/docker image prune --all --force --filter until={{ docker_prune_image_age }}

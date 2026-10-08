@@ -1,0 +1,100 @@
+---
+# Run against a disposable systemd Debian container, not a production host.
+- name: Test separate rootless Docker daemons
+  hosts: all
+  become: true
+  vars:
+    github_runner_user: github-runner
+    github_runner_home: /var/lib/actions-runner
+    docker_log_max_size: "10m"
+    docker_log_max_file: "3"
+    docker_prune_keep_storage: "20GB"
+    docker_prune_image_age: "168h"
+  roles:
+    - role: ../ansible/roles/docker
+  tasks:
+    - name: Read rootless user manager mount requirements
+      ansible.builtin.command: "systemctl show user@{{ getent_passwd[item.name][1] }}.service --property=RequiresMountsFor --value"
+      loop: "{{ docker_rootless_accounts }}"
+      register: rootless_home_mounts
+      changed_when: false
+
+    - name: Assert user managers wait for their data mounts
+      ansible.builtin.assert:
+        that: item.item.home in item.stdout.split()
+      loop: "{{ rootless_home_mounts.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Check both rootless daemons
+      ansible.builtin.command: "docker --host unix:///run/user/{{ getent_passwd[item.name][1] }}/docker.sock info --format '{{ '{{json .SecurityOptions}}' }}'"
+      become_user: "{{ item.name }}"
+      loop: "{{ docker_rootless_accounts }}"
+      register: rootless_info
+      changed_when: false
+
+    - name: Assert both daemons are rootless
+      ansible.builtin.assert:
+        that: "'rootless' in item.stdout"
+      loop: "{{ rootless_info.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Check CI cannot access the applications socket
+      ansible.builtin.command: "docker --host unix:///run/user/{{ getent_passwd[docker_apps_user][1] }}/docker.sock info"
+      become_user: "{{ github_runner_user }}"
+      register: forbidden_apps_socket
+      failed_when: false
+      changed_when: false
+
+    - name: Assert applications Docker is inaccessible to CI
+      ansible.builtin.assert:
+        that: forbidden_apps_socket.rc != 0
+
+    - name: Check CI compatibility socket resolves to rootless Docker
+      ansible.builtin.command: docker info --format '{{ '{{json .SecurityOptions}}' }}'
+      become_user: "{{ github_runner_user }}"
+      register: compatibility_socket
+      changed_when: false
+
+    - name: Assert compatibility socket is rootless
+      ansible.builtin.assert:
+        that: "'rootless' in compatibility_socket.stdout"
+
+    - name: Check rootful Docker is masked
+      ansible.builtin.command: systemctl is-enabled docker.service
+      register: rootful_service
+      changed_when: false
+      failed_when: false
+
+    - name: Assert rootful Docker cannot start automatically
+      ansible.builtin.assert:
+        that: rootful_service.stdout == 'masked'
+
+    - name: Run a real container on each daemon
+      ansible.builtin.command: "docker --host unix:///run/user/{{ getent_passwd[item.name][1] }}/docker.sock run --rm busybox:1.37 echo rootless-smoke"
+      become_user: "{{ item.name }}"
+      loop: "{{ docker_rootless_accounts }}"
+      register: rootless_smoke
+      changed_when: false
+      failed_when: rootless_smoke.stdout != 'rootless-smoke'
+
+    - name: Check the job-container socket mount works
+      ansible.builtin.command: >-
+        docker --host unix:///run/user/{{ getent_passwd[github_runner_user][1] }}/docker.sock
+        run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:29-cli
+        docker info --format '{{ '{{json .SecurityOptions}}' }}'
+      become_user: "{{ github_runner_user }}"
+      register: job_container_socket
+      changed_when: false
+      failed_when: "'rootless' not in job_container_socket.stdout"
+
+    - name: Check rootless container resource limits are actually enforced
+      ansible.builtin.command: >-
+        docker --host unix:///run/user/{{ getent_passwd[github_runner_user][1] }}/docker.sock
+        run --rm --memory 64m --cpus 0.2 --pids-limit 64 busybox:1.37
+        sh -c 'cat /sys/fs/cgroup/memory.max /sys/fs/cgroup/cpu.max /sys/fs/cgroup/pids.max'
+      become_user: "{{ github_runner_user }}"
+      register: rootless_container_limits
+      changed_when: false
+      failed_when: rootless_container_limits.stdout_lines != ['67108864', '20000 100000', '64']

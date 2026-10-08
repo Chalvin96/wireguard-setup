@@ -9,3 +9,9 @@
     project_src: /opt/monitoring
     remove_orphans: true
     state: restarted
+
+- name: Reload Prometheus
+  ansible.builtin.command:
+    cmd: docker compose --project-directory /opt/monitoring kill --signal SIGHUP prometheus
+  changed_when: true
+  when: not ansible_check_mode

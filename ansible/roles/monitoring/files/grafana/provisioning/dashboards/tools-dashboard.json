@@ -1,0 +1,144 @@
+{
+  "uid": "sindri-tools",
+  "title": "Sindri — Tools VM",
+  "tags": ["homelab", "tools"],
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Exporter availability",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "DOWN", "color": "red" },
+                "1": { "text": "UP", "color": "green" }
+              }
+            }
+          ]
+        }
+      },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"sindri\"}", "instant": true }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Host uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - node_boot_time_seconds{job=\"sindri\"}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Memory used",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"sindri\"} / node_memory_MemTotal_bytes{job=\"sindri\"})",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "CPU used",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"sindri\",mode=\"idle\"}[5m])))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "CPU and memory",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"sindri\",mode=\"idle\"}[5m])))",
+          "legendFormat": "CPU"
+        },
+        {
+          "refId": "B",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"sindri\"} / node_memory_MemTotal_bytes{job=\"sindri\"})",
+          "legendFormat": "Memory"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Boot and data disk usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"sindri\",mountpoint=~\"/|/srv\",fstype=\"ext4\"} / node_filesystem_size_bytes{job=\"sindri\",mountpoint=~\"/|/srv\",fstype=\"ext4\"})",
+          "legendFormat": "{{mountpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Network traffic",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_bytes_total{job=\"sindri\",device=\"ens18\"}[5m])",
+          "legendFormat": "Receive"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"sindri\",device=\"ens18\"}[5m])",
+          "legendFormat": "Transmit"
+        }
+      ]
+    }
+  ]
+}

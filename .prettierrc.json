@@ -1,0 +1,9 @@
+{
+  "proseWrap": "preserve",
+  "overrides": [
+    {
+      "files": ["*.yml.example", ".ansible-lint"],
+      "options": { "parser": "yaml" }
+    }
+  ]
+}

@@ -125,7 +125,7 @@
     src: prometheus.yml.j2
     dest: /opt/monitoring/prometheus.yml
     mode: "0644"
-  notify: Restart monitoring stack
+  notify: Reload Prometheus
 
 # ── Grafana provisioning ───────────────────────────────────────────────────────
 - name: Copy Grafana datasources
@@ -148,6 +148,12 @@
     dest: /opt/monitoring/grafana/provisioning/dashboards/homelab-dashboard.json
     mode: "0644"
   notify: Restart monitoring stack
+
+- name: Copy Grafana tools VM dashboard
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/tools-dashboard.json
+    dest: /opt/monitoring/grafana/provisioning/dashboards/tools-dashboard.json
+    mode: "0644"
 
 - name: Write Grafana contact point (Discord webhook from vault)
   ansible.builtin.template:

@@ -1,0 +1,9 @@
+# Managed by Ansible — posts a failed Penpot backup to the Mailrise gateway
+# (alerts@mailrise.lan on edge_ip:notify_port → Discord).
+[Unit]
+Description=Report a failed Penpot backup
+
+[Service]
+Type=oneshot
+DynamicUser=true
+ExecStart=/usr/bin/python3 -c "import smtplib, socket; from email.message import EmailMessage; m = EmailMessage(); m['From'] = 'penpot-backup@' + socket.gethostname(); m['To'] = '{{ penpot_backup_alert_recipient }}'; m['Subject'] = 'Penpot backup FAILED on ' + socket.gethostname(); m.set_content('penpot-backup.service failed. Check: journalctl -u penpot-backup'); s = smtplib.SMTP('{{ edge_ip }}', {{ notify_port }}, timeout=10); s.send_message(m); s.quit()"

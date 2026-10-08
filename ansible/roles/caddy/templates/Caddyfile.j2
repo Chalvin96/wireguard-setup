@@ -30,3 +30,12 @@
 }
 
 import /etc/caddy/conf.d/*.caddy
+
+# ── Ansible-managed sites (caddy_sites) ──────────────────────────────────────
+# Rendered here, not in conf.d, so `caddy validate` checks them before reload.
+{% for site in caddy_sites | default([]) %}
+{{ site.host }} {
+    import access_log
+    reverse_proxy {{ site.upstream }}
+}
+{% endfor %}

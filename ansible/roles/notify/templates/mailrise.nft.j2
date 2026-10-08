@@ -1,0 +1,8 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible
+
+add table inet mailrise
+add chain inet mailrise input { type filter hook input priority -3; policy accept; }
+flush chain inet mailrise input
+add rule inet mailrise input iif lo accept
+add rule inet mailrise input tcp dport {{ notify_port }} ip saddr != {{ wireguard_lan_cidr }} drop

@@ -237,15 +237,15 @@ Existing VMs are not adopted automatically; import and review their plans first.
 
 A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
 
-| Disk           | Storage                     | Mount  | Holds                                                              |
-| -------------- | --------------------------- | ------ | ------------------------------------------------------------------ |
-| `scsi0` 64 GB  | SSD (`ssd=1`, `discard=on`) | `/`    | OS, packages and system logs                                       |
-| `scsi1` 128 GB | HDD                         | `/srv` | Penpot data/backups, Docker data/cache and runner homes/workspaces |
+| Disk           | Role | Mount  | Holds                                                              |
+| -------------- | ---- | ------ | ------------------------------------------------------------------ |
+| `scsi0` 64 GB  | Boot | `/`    | OS, packages and system logs                                       |
+| `scsi1` 128 GB | Data | `/srv` | Penpot data/backups, Docker data/cache and runner homes/workspaces |
 
-Mount the HDD at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
+Mount the data disk at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
 VM; the roles assume it is already mounted.
 
-Bind the heavy `/var/lib` directories from `/srv/heavy-data` as described in
+Bind the Docker and runner `/var/lib` directories from `/srv` as described in
 [the storage procedure](docs/rootless-docker.md). Existing hosts require a
 maintenance copy and verification; do not mount over live data.
 
@@ -286,7 +286,7 @@ off the VM for protection against disk loss.
 
 The monitoring VM scrapes tools-01's existing Node Exporter. In Grafana, open
 **Sindri — Tools VM** (`/d/sindri-tools`) for availability, uptime, CPU, memory,
-SSD/HDD usage, and network traffic. This is host monitoring; it does not claim
+boot/data disk usage, and network traffic. This is host monitoring; it does not claim
 that Penpot requests or GitHub workflow jobs are successful.
 
 ## Contributor setup

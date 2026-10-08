@@ -105,7 +105,7 @@
     },
     {
       "id": 6,
-      "title": "SSD root and HDD data usage",
+      "title": "Boot and data disk usage",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },

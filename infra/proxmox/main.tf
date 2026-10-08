@@ -15,8 +15,8 @@ variable "vms" {
   type = map(object({
     vm_id        = number
     node_name    = string
-    ssd_storage  = string
-    hdd_storage  = string
+    boot_storage = string
+    data_storage = string
     iso_file_id  = optional(string, "none")
     bridge       = optional(string, "vmbr0")
     mac_address  = string
@@ -55,12 +55,12 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   efi_disk {
-    datastore_id = each.value.ssd_storage
+    datastore_id = each.value.boot_storage
     type         = "4m"
   }
 
   disk {
-    datastore_id = each.value.ssd_storage
+    datastore_id = each.value.boot_storage
     interface    = "scsi0"
     size         = each.value.boot_disk_gb
     ssd          = true
@@ -69,7 +69,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   disk {
-    datastore_id = each.value.hdd_storage
+    datastore_id = each.value.data_storage
     interface    = "scsi1"
     size         = each.value.data_disk_gb
     iothread     = true

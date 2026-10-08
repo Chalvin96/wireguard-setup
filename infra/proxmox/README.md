@@ -5,9 +5,10 @@ partitions the guest disks; Ansible configures services afterward. This uses an
 ISO already uploaded through Proxmox, so no SSH access to the hypervisor or
 cloud-init template is required. It does not install or reconfigure Proxmox itself.
 
-The default VM map is empty. No existing VM is automatically adopted. The SSD
-boot disk is 64 GB and the HDD data disk is 128 GB; install Debian with `/` on
-the SSD and `/srv` on the HDD. Reserve the configured MAC/IP in MikroTik.
+The default VM map is empty. No existing VM is automatically adopted. The
+boot disk is 64 GB and the data disk is 128 GB; install Debian with `/` on
+the boot disk and `/srv` on the data disk. Set `boot_storage` and `data_storage`
+to the intended Proxmox datastores. Reserve the configured MAC/IP in MikroTik.
 
 ## Connect
 

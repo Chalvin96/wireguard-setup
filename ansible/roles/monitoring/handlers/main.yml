@@ -11,7 +11,8 @@
     state: restarted
 
 - name: Reload Prometheus
-  ansible.builtin.command:
-    cmd: docker compose --project-directory /opt/monitoring kill --signal SIGHUP prometheus
-  changed_when: true
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    services: [prometheus]
+    recreate: always
   when: not ansible_check_mode

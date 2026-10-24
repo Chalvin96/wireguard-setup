@@ -56,6 +56,8 @@ writers, takes a final database/assets backup, and archives the stopped project
 with its original numeric ownership. It remaps bind-mounted data for rootless
 UIDs, verifies HTTP health and database row counts, and tests the backup service.
 Application-stage failures restore the original data and service configuration.
+Preparation failures restore the original runner Docker context and restart only
+runner services that were active before migration.
 
 Rollback archives contain secrets. They remain root-only under
 `/srv/backups/rootless-migration`; keep them until real Penpot usage and CI have

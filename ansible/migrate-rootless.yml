@@ -20,100 +20,137 @@
       changed_when: false
       failed_when: rootless_active_jobs.rc != 1
 
-    - name: Pause idle runners before configuring their new daemon
+    - name: Record original runner service state
       ansible.builtin.systemd:
         name: "actions-runner@{{ item.repo }}"
-        state: stopped
+      register: rootless_runner_state
       loop: "{{ github_runner_repos }}"
       loop_control:
         label: "{{ item.repo }}"
-  roles:
-    - docker
+
+    - name: Record the original runner Docker context
+      ansible.builtin.command: docker context show
+      become: true
+      become_user: "{{ github_runner_user }}"
+      register: rootless_original_context
+      changed_when: false
+
   tasks:
-    - name: Refuse to interrupt running CI jobs
-      ansible.builtin.command: pgrep -x Runner.Worker
-      register: rootless_active_jobs
-      changed_when: false
-      failed_when: rootless_active_jobs.rc != 1
-
-    - name: Refuse unknown running containers on the rootful daemon
-      ansible.builtin.shell: |
-        set -o pipefail
-        docker --host unix:///var/run/docker.sock ps --format '{{ '{{.Names}}' }}' | sed '/^penpot-/d'
-      args:
-        executable: /bin/bash
-      register: rootless_other_containers
-      changed_when: false
-      failed_when: rootless_other_containers.stdout | length > 0
-
-    - name: Read both daemon account IDs
-      ansible.builtin.getent:
-        database: passwd
-
-    - name: Read existing Penpot environment without exposing secrets
-      ansible.builtin.slurp:
-        src: "{{ penpot_dir }}/.env"
-      register: rootless_existing_env
-      no_log: true
-
-    - name: Refuse unrelated Penpot configuration changes during migration
-      ansible.builtin.assert:
-        that:
-          - rootless_existing_env.content | b64decode == lookup('ansible.builtin.template', 'roles/penpot/templates/env.j2')
-        fail_msg: Synchronize the encrypted Penpot configuration with the live environment before migrating; do not overwrite live secrets.
-      no_log: true
-
-    - name: Load migration account IDs
-      ansible.builtin.set_fact:
-        rootless_apps_uid: "{{ getent_passwd[docker_apps_user][1] }}"
-        rootless_ci_uid: "{{ getent_passwd[github_runner_user][1] }}"
-
-    - name: Transfer the existing Penpot images to applications Docker
-      ansible.builtin.shell: |
-        set -euo pipefail
-        mapfile -t images < <(docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir | quote }} config --images | sort -u)
-        test -n "${images[*]}"
-        docker --host unix:///var/run/docker.sock image save "${images[@]}" |
-          runuser -u {{ docker_apps_user | quote }} -- docker --host unix:///run/user/{{ rootless_apps_uid }}/docker.sock image load --quiet
-      args:
-        executable: /bin/bash
-      changed_when: true
-
-    - name: Create private migration backup parent
-      ansible.builtin.file:
-        path: /srv/backups/rootless-migration
-        state: directory
-        mode: "0700"
-
-    - name: Create a unique rollback directory
-      ansible.builtin.tempfile:
-        state: directory
-        path: /srv/backups/rootless-migration
-        prefix: migration.
-      register: rootless_rollback
-
-    - name: Preserve existing service configuration for rollback
-      ansible.builtin.shell: |
-        set -euo pipefail
-        paths=(usr/local/bin/penpot-backup etc/systemd/system/penpot-backup.service etc/systemd/system/actions-runner@.service)
-        for path in etc/systemd/system/penpot.service; do
-          if test -f "/$path"; then paths+=("$path"); fi
-        done
-        tar --create --gzip --file {{ (rootless_rollback.path + '/services.tar.gz') | quote }} --directory / "${paths[@]}"
-      args:
-        executable: /bin/bash
-      changed_when: true
-
-    - name: Cut over with rollback on application failure
+    - name: Prepare migration with runner recovery on failure
       block:
-        - name: Pause runners before the cutover
+        - name: Pause idle runners before configuring their new daemon
           ansible.builtin.systemd:
             name: "actions-runner@{{ item.repo }}"
             state: stopped
           loop: "{{ github_runner_repos }}"
           loop_control:
             label: "{{ item.repo }}"
+        - name: Configure rootless Docker for migration
+          ansible.builtin.include_role:
+            name: docker
+            public: true
 
+        - name: Refuse to interrupt running CI jobs
+          ansible.builtin.command: pgrep -x Runner.Worker
+          register: rootless_active_jobs
+          changed_when: false
+          failed_when: rootless_active_jobs.rc != 1
+
+        - name: Refuse unknown running containers on the rootful daemon
+          ansible.builtin.shell: |
+            set -o pipefail
+            docker --host unix:///var/run/docker.sock ps --format '{{ '{{.Names}}' }}' | sed '/^penpot-/d'
+          args:
+            executable: /bin/bash
+          register: rootless_other_containers
+          changed_when: false
+          failed_when: rootless_other_containers.stdout | length > 0
+
+        - name: Read both daemon account IDs
+          ansible.builtin.getent:
+            database: passwd
+
+        - name: Read existing Penpot environment without exposing secrets
+          ansible.builtin.slurp:
+            src: "{{ penpot_dir }}/.env"
+          register: rootless_existing_env
+          no_log: true
+
+        - name: Refuse unrelated Penpot configuration changes during migration
+          vars:
+            rootless_expected_env: "{{ lookup('ansible.builtin.template', 'roles/penpot/templates/env.j2') }}"
+            rootless_legacy_env: >-
+              {{ rootless_expected_env | regex_replace('(?m)^PENPOT_FLAGS=' ~ (penpot_flags | regex_escape) ~ ' enable-mcp$',
+              'PENPOT_FLAGS=' ~ penpot_flags) }}
+          ansible.builtin.assert:
+            that:
+              - rootless_existing_env.content | b64decode in [rootless_expected_env, rootless_legacy_env]
+            fail_msg: Synchronize the encrypted Penpot configuration with the live environment before migrating; do not overwrite live secrets.
+          no_log: true
+
+        - name: Load migration account IDs
+          ansible.builtin.set_fact:
+            rootless_apps_uid: "{{ getent_passwd[docker_apps_user][1] }}"
+            rootless_ci_uid: "{{ getent_passwd[github_runner_user][1] }}"
+
+        - name: Transfer the existing Penpot images to applications Docker
+          ansible.builtin.shell: |
+            set -euo pipefail
+            mapfile -t images < <(docker --host unix:///var/run/docker.sock compose --project-directory {{ penpot_dir | quote }} config --images | sort -u)
+            test -n "${images[*]}"
+            docker --host unix:///var/run/docker.sock image save "${images[@]}" |
+              runuser -u {{ docker_apps_user | quote }} -- docker --host unix:///run/user/{{ rootless_apps_uid }}/docker.sock image load --quiet
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Create private migration backup parent
+          ansible.builtin.file:
+            path: /srv/backups/rootless-migration
+            state: directory
+            mode: "0700"
+
+        - name: Create a unique rollback directory
+          ansible.builtin.tempfile:
+            state: directory
+            path: /srv/backups/rootless-migration
+            prefix: migration.
+          register: rootless_rollback
+
+        - name: Preserve existing service configuration for rollback
+          ansible.builtin.shell: |
+            set -euo pipefail
+            paths=(usr/local/bin/penpot-backup etc/systemd/system/penpot-backup.service etc/systemd/system/actions-runner@.service)
+            for path in etc/systemd/system/penpot.service; do
+              if test -f "/$path"; then paths+=("$path"); fi
+            done
+            tar --create --gzip --file {{ (rootless_rollback.path + '/services.tar.gz') | quote }} --directory / "${paths[@]}"
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+      rescue:
+        - name: Restore the original runner Docker context after preparation failure
+          ansible.builtin.command: "docker context use {{ rootless_original_context.stdout }}"
+          become: true
+          become_user: "{{ github_runner_user }}"
+          changed_when: true
+
+        - name: Resume previously active runners after preparation failure
+          ansible.builtin.systemd:
+            name: "{{ item.status.Id }}"
+            state: started
+          loop: "{{ rootless_runner_state.results }}"
+          loop_control:
+            label: "{{ item.item.repo }}"
+          when: item.status.ActiveState == 'active'
+
+        - name: Report migration preparation failure
+          ansible.builtin.fail:
+            msg: Migration preparation failed; the original runner context and active services were restored.
+
+    - name: Cut over with rollback on application failure
+      block:
         - name: Pause scheduled backups
           ansible.builtin.systemd:
             name: penpot-backup.timer
@@ -273,11 +310,19 @@
           become_user: "{{ github_runner_user }}"
           changed_when: true
 
-        - name: Resume backups and original runners
+        - name: Resume backups
           ansible.builtin.systemd:
-            name: "{{ item }}"
+            name: penpot-backup.timer
             state: started
-          loop: "{{ ['penpot-backup.timer'] + (github_runner_repos | map(attribute='repo') | map('regex_replace', '^', 'actions-runner@') | list) }}"
+
+        - name: Resume previously active runners after application rollback
+          ansible.builtin.systemd:
+            name: "{{ item.status.Id }}"
+            state: started
+          loop: "{{ rootless_runner_state.results }}"
+          loop_control:
+            label: "{{ item.item.repo }}"
+          when: item.status.ActiveState == 'active'
 
         - name: Report the failed cutover and retained rollback backup
           ansible.builtin.fail:

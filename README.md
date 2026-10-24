@@ -235,15 +235,9 @@ ansible-playbook ansible/unban.yml
 VM hardware can be provisioned with [OpenTofu](infra/proxmox/README.md).
 Existing VMs are not adopted automatically; import and review their plans first.
 
-A Proxmox VM with two virtual disks, created by hand before `bootstrap.yml`:
-
-| Disk           | Role | Mount  | Holds                                                              |
-| -------------- | ---- | ------ | ------------------------------------------------------------------ |
-| `scsi0` 64 GB  | Boot | `/`    | OS, packages and system logs                                       |
-| `scsi1` 128 GB | Data | `/srv` | Penpot data/backups, Docker data/cache and runner homes/workspaces |
-
-Mount the data disk at `/srv` (fstab by UUID, `defaults,noatime`) when you create the
-VM; the roles assume it is already mounted.
+Create separate boot and service-data storage before deployment. Mount the
+service-data filesystem at `/srv` using a UUID in fstab; the roles assume it is
+already mounted. Choose storage sizes for the workload.
 
 Bind the Docker and runner `/var/lib` directories from `/srv` as described in
 [the storage procedure](docs/rootless-docker.md). Existing hosts require a
@@ -307,6 +301,12 @@ so you do not need to install Prettier or Gitleaks globally for these hooks.
 Run `./run.sh lint` for Ansible checks, `bash tests/test-penpot-backup.sh` for backup
 failure handling, and `tofu -chdir=infra/proxmox validate` after `tofu init` for VM
 configuration. Formatting is also checked in GitHub Actions.
+
+Run the migration preflight and recovery regression checks without a target host:
+
+```bash
+uv run --no-project --python 3.12 --with 'ansible-core>=2.17,<2.18' python tests/test_migration_recovery.py
+```
 
 ## Repository Layout
 

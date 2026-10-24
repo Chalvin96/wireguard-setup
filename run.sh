@@ -29,12 +29,12 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-ansible_tool() {
+run_ansible_tool() {
   uvx --quiet --python "$K_PYTHON" --from "$K_ANSIBLE_CORE" "$@"
 }
 
 install_collections() {
-  ansible_tool ansible-galaxy collection install -r ansible/requirements.yml -p .collections >/dev/null
+  run_ansible_tool ansible-galaxy collection install -r ansible/requirements.yml -p .collections >/dev/null
 }
 
 # Plaintext files created by this script (password, new config) are removed on
@@ -76,15 +76,15 @@ edit_config() {
     TEMP_FILES+=("$plain")
     cp "$K_CONFIG_EXAMPLE" "$plain"
     "${EDITOR:-nano}" "$plain"
-    ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$plain" --output "$K_CONFIG"
+    run_ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$plain" --output "$K_CONFIG"
     echo "Created encrypted $K_CONFIG"
     return
   fi
   if ! head -1 "$K_CONFIG" | grep -q '^\$ANSIBLE_VAULT'; then
-    ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$K_CONFIG"
+    run_ansible_tool ansible-vault encrypt --vault-password-file "$vault_pass_file" "$K_CONFIG"
     echo "Encrypted existing plaintext $K_CONFIG"
   fi
-  EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$vault_pass_file" "$K_CONFIG"
+  EDITOR="${EDITOR:-nano}" run_ansible_tool ansible-vault edit --vault-password-file "$vault_pass_file" "$K_CONFIG"
 }
 
 # A leading flag (./run.sh --check --diff) means "all hosts".
@@ -107,21 +107,21 @@ case "$command" in
     ;;
   edit-vault)
     resolve_vault_password_file
-    EDITOR="${EDITOR:-nano}" ansible_tool ansible-vault edit --vault-password-file "$VAULT_PASS_FILE" "$K_VAULT"
+    EDITOR="${EDITOR:-nano}" run_ansible_tool ansible-vault edit --vault-password-file "$VAULT_PASS_FILE" "$K_VAULT"
     ;;
   bootstrap)
     install_collections
     resolve_vault_password_file
-    ansible_tool ansible-playbook ansible/bootstrap.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
+    run_ansible_tool ansible-playbook ansible/bootstrap.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
     ;;
   all)
     install_collections
     resolve_vault_password_file
-    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
+    run_ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" "$@"
     ;;
   *)
     install_collections
     resolve_vault_password_file
-    ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" --limit "$command" "$@"
+    run_ansible_tool ansible-playbook ansible/site.yml --vault-password-file "$VAULT_PASS_FILE" --limit "$command" "$@"
     ;;
 esac

@@ -45,6 +45,7 @@
     - network
     - distribution
   roles:
+    - { role: app-isolation, tags: [app-isolation] }
     - { role: monitoring, tags: [monitoring] }
 
 - name: Tools VM — Penpot + self-hosted CI runners
@@ -57,6 +58,7 @@
     - distribution
   roles:
     - { role: docker, tags: [docker] }
+    - { role: app-isolation, tags: [app-isolation] }
     - { role: penpot, tags: [penpot] }
     - { role: github-runner, tags: [github-runner] }
     - { role: sindri-monitoring, tags: [sindri-monitoring] }

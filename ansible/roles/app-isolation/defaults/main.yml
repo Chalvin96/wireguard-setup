@@ -1,0 +1,4 @@
+---
+app_isolation_user: ""
+app_isolation_bridge: ""
+app_isolation_allowed_services: []

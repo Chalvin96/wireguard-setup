@@ -1,0 +1,7 @@
+---
+- name: Apply application firewall
+  ansible.builtin.systemd:
+    name: app-isolation
+    state: reloaded
+    daemon_reload: true
+  when: not ansible_check_mode

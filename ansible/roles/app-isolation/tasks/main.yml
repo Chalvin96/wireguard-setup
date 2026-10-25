@@ -1,0 +1,86 @@
+---
+- name: Require an application account or a dedicated bridge
+  ansible.builtin.assert:
+    that:
+      - (app_isolation_user | length > 0) != (app_isolation_bridge | length > 0)
+
+- name: Validate local service exceptions
+  ansible.builtin.assert:
+    that:
+      - item.protocol in ['tcp', 'udp']
+      - item.port | int > 0 and item.port | int < 65536
+      - item.address is match('^[0-9.]+$')
+  loop: "{{ app_isolation_allowed_services }}"
+  no_log: true
+
+- name: Read the rootless application account ID
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ app_isolation_user }}"
+  when: app_isolation_user | length > 0
+
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+
+- name: Create firewall configuration directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Install application local-network whitelist
+  ansible.builtin.template:
+    src: app-isolation.nft.j2
+    dest: /etc/nftables.d/app-isolation.nft
+    mode: "0600"
+    validate: nft --check -f %s
+  diff: false
+  notify: Apply application firewall
+
+- name: Preserve application filtering across global firewall reloads
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/app-isolation.nft"'
+  notify: Apply application firewall
+
+- name: Install application firewall service
+  ansible.builtin.template:
+    src: app-isolation.service.j2
+    dest: /etc/systemd/system/app-isolation.service
+    mode: "0644"
+  notify: Apply application firewall
+
+- name: Select the protected runtime service
+  ansible.builtin.set_fact:
+    app_isolation_runtime: >-
+      {{ 'user@' ~ ansible_facts.getent_passwd[app_isolation_user][1] ~ '.service'
+         if app_isolation_user | length > 0 else 'docker.service' }}
+
+- name: Create runtime service override directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ app_isolation_runtime }}.d"
+    state: directory
+    mode: "0755"
+
+- name: Require the whitelist before starting application networking
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ app_isolation_runtime }}.d/app-isolation.conf"
+    content: |
+      [Unit]
+      Requires=app-isolation.service
+      After=app-isolation.service
+    mode: "0644"
+  notify: Apply application firewall
+
+- name: Enable application firewall
+  ansible.builtin.systemd:
+    name: app-isolation
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Apply pending firewall configuration
+  ansible.builtin.meta: flush_handlers

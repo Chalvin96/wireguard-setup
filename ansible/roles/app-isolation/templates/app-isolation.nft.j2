@@ -1,0 +1,22 @@
+add table inet app_isolation
+add chain inet app_isolation allowlist
+flush chain inet app_isolation allowlist
+add rule inet app_isolation allowlist ct direction reply return
+{% for service in app_isolation_allowed_services %}
+add rule inet app_isolation allowlist ip daddr {{ service.address }} {{ service.protocol }} dport {{ service.port }} counter return
+{% endfor %}
+add rule inet app_isolation allowlist ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter reject with icmpx type admin-prohibited
+add rule inet app_isolation allowlist ip6 daddr { ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8 } counter reject with icmpx type admin-prohibited
+{% if app_isolation_user | length > 0 %}
+add chain inet app_isolation output { type filter hook output priority -5; policy accept; }
+flush chain inet app_isolation output
+add rule inet app_isolation output meta skuid {{ ansible_facts.getent_passwd[app_isolation_user][1] }} jump allowlist
+{% else %}
+add chain inet app_isolation input { type filter hook input priority -5; policy accept; }
+add chain inet app_isolation forward { type filter hook forward priority -5; policy accept; }
+flush chain inet app_isolation input
+flush chain inet app_isolation forward
+add rule inet app_isolation input iifname "{{ app_isolation_bridge }}" jump allowlist
+add rule inet app_isolation forward iifname "{{ app_isolation_bridge }}" oifname "{{ app_isolation_bridge }}" return
+add rule inet app_isolation forward iifname "{{ app_isolation_bridge }}" jump allowlist
+{% endif %}

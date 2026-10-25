@@ -1,0 +1,6 @@
+---
+app_isolation_user: "{{ docker_apps_user | default('apps') }}"
+app_isolation_allowed_services: >-
+  {{ tools_app_allowed_services | default([
+       {'address': mikrotik_ip, 'protocol': 'udp', 'port': 53},
+       {'address': mikrotik_ip, 'protocol': 'tcp', 'port': 53}]) }}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Application local-network whitelist
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/app-isolation.nft
+ExecReload=/usr/sbin/nft -f /etc/nftables.d/app-isolation.nft
+
+[Install]
+WantedBy=multi-user.target

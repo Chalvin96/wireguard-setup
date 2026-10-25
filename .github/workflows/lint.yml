@@ -34,5 +34,11 @@ jobs:
       - name: Check secret handling
         run: bash tests/test-security-config.sh
 
+      - name: Check application network isolation
+        run: |
+          sudo apt-get install -y --no-install-recommends nftables iproute2
+          python tests/test_app_isolation.py render "$RUNNER_TEMP/app-isolation.nft"
+          sudo unshare --net "$(command -v python)" tests/test_app_isolation.py "$RUNNER_TEMP/app-isolation.nft"
+
       - name: Run ansible-lint
         run: cd ansible && ansible-lint

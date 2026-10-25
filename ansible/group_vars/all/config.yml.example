@@ -56,6 +56,7 @@ grafana_disk_alert_threshold: 80 # percent
 glitchtip_domain: "https://sentry.example.com" # must match its caddy_sites host
 glitchtip_enable_admin: false
 glitchtip_enable_openapi: false
+glitchtip_allowed_services: []
 
 # Image versions
 loki_image: "grafana/loki:3.1.0"
@@ -83,6 +84,9 @@ notify_port: 8025
 notify_mail_domain: "mailrise.lan" # senders mail <channel>@<this domain>
 
 # Tools host: Docker
+tools_app_allowed_services:
+  - { address: "{{ mikrotik_ip }}", protocol: udp, port: 53 }
+  - { address: "{{ mikrotik_ip }}", protocol: tcp, port: 53 }
 docker_log_max_size: "10m"
 docker_log_max_file: "3"
 docker_prune_keep_storage: "20GB" # build cache kept after the weekly prune

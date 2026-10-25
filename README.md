@@ -293,6 +293,16 @@ these alerts to the existing Discord contact point. See
 [storage and monitoring configuration](docs/sindri-storage.md) for isolation
 and deployment instructions.
 
+## Application network isolation
+
+Applications use a whitelist for local-network access; public internet access
+remains available. Penpot may use the configured DNS resolver. GlitchTip reaches
+its own database and cache on a separate Docker network. Other local connections,
+including router, hypervisor, SSH and monitoring administration, are denied.
+
+See [application network isolation](docs/app-isolation.md) for allowed services,
+deployment and verification.
+
 ## Contributor setup
 
 Use Node.js 22 and `uv` on the control machine. Install the local Git hooks once:

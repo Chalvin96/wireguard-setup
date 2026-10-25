@@ -1,0 +1,5 @@
+---
+- name: Apply VPS firewall
+  ansible.builtin.command: nft -f /etc/nftables.d/vps-firewall.nft
+  changed_when: true
+  when: not ansible_check_mode

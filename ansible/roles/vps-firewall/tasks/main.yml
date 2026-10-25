@@ -1,38 +1,43 @@
 ---
-- name: Install ufw
+- name: Install nftables
   ansible.builtin.apt:
-    name: ufw
+    name: nftables
     state: present
     update_cache: true
 
-- name: Rate-limit new SSH connections
-  ansible.builtin.command: ufw limit {{ ansible_port | default(22) }}/tcp
-  register: ufw_rule_ssh
-  changed_when: "'Rule added' in ufw_rule_ssh.stdout"
+- name: Create firewall configuration directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
 
-- name: Allow HAProxy HTTP and HTTPS
-  ansible.builtin.command: ufw allow {{ item }}/tcp
-  register: ufw_rule_http
-  changed_when: "'Rule added' in ufw_rule_http.stdout"
-  loop:
-    - "{{ haproxy_http_port }}"
-    - "{{ haproxy_https_port }}"
+- name: Install VPS ingress firewall
+  ansible.builtin.template:
+    src: vps-firewall.nft.j2
+    dest: /etc/nftables.d/vps-firewall.nft
+    mode: "0600"
+    validate: nft --check -f %s
+  diff: false
+  notify: Apply VPS firewall
 
-- name: Allow WireGuard UDP
-  ansible.builtin.command: ufw allow {{ wireguard_port }}/udp
-  register: ufw_rule_wg
-  changed_when: "'Rule added' in ufw_rule_wg.stdout"
+- name: Preserve WireGuard NAT and dynamic ban tables when loading nftables
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    regexp: "^flush ruleset$"
+    state: absent
 
-- name: Default deny incoming
-  ansible.builtin.command: ufw default deny incoming
-  register: ufw_default
-  changed_when: "'Default incoming policy changed' in ufw_default.stdout"
+- name: Include the VPS firewall at boot
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/vps-firewall.nft"'
+  notify: Apply VPS firewall
 
-- name: Check ufw state
-  ansible.builtin.command: ufw status
-  register: ufw_status
-  changed_when: false
+- name: Enable nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+  when: not ansible_check_mode
 
-- name: Enable ufw
-  ansible.builtin.command: ufw --force enable
-  when: "'Status: active' not in ufw_status.stdout"
+- name: Apply pending VPS rules
+  ansible.builtin.meta: flush_handlers

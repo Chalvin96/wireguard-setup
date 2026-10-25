@@ -1,5 +1,5 @@
 ---
-- name: Reload nftables
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded
+- name: Apply VPS blocklist
+  ansible.builtin.command: nft -f /etc/nftables.d/blocklist.nft
+  changed_when: true
+  when: not ansible_check_mode

@@ -104,6 +104,13 @@ outside Ansible's control.
 
 ## Security Design
 
+The VPS uses nftables to deny unsolicited inbound traffic, allowing configured
+SSH, HTTP/HTTPS and WireGuard ports plus ICMP and DHCP. Unsolicited forwarding
+from the public interface is blocked, including accidentally published container
+ports; established replies and WireGuard forwarding remain available. SSH abuse
+protection remains with fail2ban. Firewall updates load only managed tables and
+preserve existing NAT and ban state.
+
 ### CrowdSec — web threat detection + proactive blocking
 
 Runs on the edge node as the **LAPI** server. It tails Caddy's JSON access log
@@ -347,6 +354,7 @@ roles/
 ├── wireguard-server/    # ingress-01: WG server + peer mgmt (wg0 + wg0-peers.conf)
 ├── mikrotik-wireguard/  # mikrotik-01: RouterOS WG tunnel + CGNAT watchdog (raw SSH)
 ├── haproxy/             # ingress-01: TCP forward + PROXY v2 + rate limiting
+├── vps-firewall/       # ingress-01: default-deny ingress and public forwarding guard
 ├── vps-blocklist/       # ingress-01: nftables blocklist + banagent ban-ip tool
 ├── fail2ban/            # both nodes: SSH incremental banning via nftables
 ├── crowdsec/            # edge-01: LAPI + Hub + blocklist-import  |  ingress-01: bouncer

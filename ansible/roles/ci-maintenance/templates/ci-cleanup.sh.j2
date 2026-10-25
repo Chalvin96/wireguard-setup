@@ -1,0 +1,84 @@
+#!/bin/bash
+set -euo pipefail
+export PATH="${PATH:-/usr/bin:/bin}:/usr/sbin:/sbin"
+
+ci_user={{ github_runner_user | quote }}
+ci_home={{ github_runner_home | quote }}
+ci_uid=$(id -u "$ci_user")
+runner_units=(
+{% for repo in github_runner_repos %}
+    {{ ('actions-runner@' ~ repo.repo ~ '.service') | quote }}
+{% endfor %}
+)
+frozen=()
+started=0
+exec 9>/run/lock/ci-cleanup.lock
+flock -n 9 || exit 0
+
+finish() {
+    status=$?
+    trap - EXIT
+    for unit in "${frozen[@]}"; do
+        systemctl thaw "$unit" || true
+    done
+    if (( started )); then
+        temporary=/var/lib/prometheus/node-exporter/ci-cleanup.tmp
+        printf 'ci_cleanup_success %s\nci_cleanup_last_run_timestamp_seconds %s\n' \
+            "$((status == 0))" "$(date +%s)" > "$temporary"
+        chmod 0644 "$temporary"
+        mv "$temporary" /var/lib/prometheus/node-exporter/ci-cleanup.prom
+    fi
+    exit "$status"
+}
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
+
+run_ci_docker() {
+    runuser -u "$ci_user" -- docker --host "unix:///run/user/$ci_uid/docker.sock" "$@"
+}
+
+for unit in "${runner_units[@]}"; do
+    if systemctl is-active --quiet "$unit"; then
+        frozen+=("$unit")
+        systemctl freeze "$unit"
+    fi
+done
+if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
+    echo 'CI cleanup skipped: a job is active.'
+    exit 0
+else
+    result=$?
+    (( result == 1 )) || exit "$result"
+fi
+started=1
+
+run_ci_docker container prune --force
+run_ci_docker volume prune --force
+volumes=$(run_ci_docker volume ls --filter dangling=true --format '{{ '{{.Name}}' }}')
+while IFS= read -r volume; do
+    case "$volume" in
+        buildx_buildkit_*_state) run_ci_docker volume rm "$volume" ;;
+    esac
+done <<< "$volumes"
+
+run_ci_docker image prune --all --force
+run_ci_docker buildx prune --builder default --force --max-used-space 2GB
+builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
+    python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
+while IFS= read -r builder; do
+    [[ -n "$builder" ]] || continue
+    run_ci_docker buildx prune --builder "$builder" --force --max-used-space 2GB
+done <<< "$builders"
+
+used=$(df -B1 --output=used /srv | tail -1)
+if (( used > 25000000000 )); then
+{% for repo in github_runner_repos %}
+    rm -rf --one-file-system -- {{ (github_runner_home ~ '/' ~ repo.repo ~ '/_work') | quote }}
+{% endfor %}
+    rm -rf --one-file-system -- "$ci_home/.cache" "$ci_home/.local/share/pnpm/store"
+    if [[ -d "$ci_home/_tool" ]]; then
+        find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' \
+            -exec rm -rf --one-file-system -- {} +
+    fi
+fi
+df -h /srv

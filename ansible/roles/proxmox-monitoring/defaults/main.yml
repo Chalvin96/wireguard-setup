@@ -1,0 +1,4 @@
+---
+proxmox_expected_disks: []
+proxmox_expected_storages: [local, local-lvm]
+proxmox_disk_temperature_limit: 50

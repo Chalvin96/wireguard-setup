@@ -1,0 +1,3 @@
+---
+app_isolation_bridge: br-glitchtip
+app_isolation_allowed_services: "{{ glitchtip_allowed_services | default([]) }}"

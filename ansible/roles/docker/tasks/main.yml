@@ -1,0 +1,35 @@
+---
+- name: Install Docker engine
+  ansible.builtin.import_role:
+    name: docker-engine
+
+- name: Install rootless Docker dependencies
+  ansible.builtin.apt:
+    name:
+      - docker-buildx-plugin
+      - docker-ce-rootless-extras
+      - uidmap
+      - dbus-user-session
+      - slirp4netns
+      - iproute2
+      - acl
+    state: present
+
+- name: Configure separate applications and CI daemons
+  ansible.builtin.include_tasks: rootless.yml
+
+- name: Disable rootful Docker and provide the CI compatibility socket
+  ansible.builtin.include_tasks: rootless-cutover.yml
+  when: not docker_rootless_migration | bool
+
+- name: Install Node Exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+
+- name: Enable Node Exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+  when: not ansible_check_mode # unit/file is only created in a real run

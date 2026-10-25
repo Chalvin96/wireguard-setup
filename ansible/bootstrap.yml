@@ -1,9 +1,7 @@
 ---
-# Run once per host as your existing named user.
-# ansible-playbook ansible/bootstrap.yml -u <your_user> --ask-pass --ask-become-pass
-# Prerequisites: ansible-galaxy collection install -r requirements.yml
+# Pass ansible_user with -e; inventory overrides -u.
 - name: Bootstrap deploy user
-  hosts: 'all:!mikrotik'
+  hosts: "all:!mikrotik"
   gather_facts: false
   become: true
   vars:
@@ -31,11 +29,18 @@
         owner: deploy
         group: deploy
 
-    - name: Add operator SSH public key
+    - name: Add operator SSH public key (the machine running bootstrap)
       ansible.posix.authorized_key:
         user: deploy
         key: "{{ bootstrap_ssh_pubkey }}"
         state: present
+
+    - name: Add authorized operator machines from config
+      ansible.posix.authorized_key:
+        user: deploy
+        key: "{{ item }}"
+        state: present
+      loop: "{{ deploy_authorized_keys | default([]) }}"
 
     - name: Configure passwordless sudo
       ansible.builtin.copy:

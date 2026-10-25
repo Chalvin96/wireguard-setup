@@ -1,0 +1,9 @@
+---
+- name: Update Grafana alerts and Discord notifications
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Apply shared alert provisioning
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: alerting

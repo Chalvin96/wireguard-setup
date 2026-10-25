@@ -1,11 +1,33 @@
 ---
-# Note: Grafana supports hot-reload of dashboards/datasources via
-# POST /api/admin/provisioning/dashboards/reload (and /datasources/reload).
-# Full stack restart is used here for simplicity; split into a separate
-# Grafana-only handler using ansible.builtin.uri if restart latency becomes
-# a concern in production.
 - name: Restart monitoring stack
   community.docker.docker_compose_v2:
     project_src: /opt/monitoring
     remove_orphans: true
     state: restarted
+
+- name: Reload Prometheus
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    services: [prometheus]
+    recreate: always
+  when: not ansible_check_mode
+
+- name: Reload Grafana alerting
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - monitoring-grafana-1
+      - sh
+      - -c
+      - >-
+        curl --fail --silent --show-error --max-time 60
+        --user "$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD"
+        --request POST http://localhost:3000/api/admin/provisioning/alerting/reload
+  register: grafana_alert_reload
+  retries: 12
+  delay: 5
+  until: grafana_alert_reload.rc == 0
+  changed_when: true
+  no_log: true
+  when: not ansible_check_mode

@@ -1,0 +1,6 @@
+---
+- name: Whitelist application access to local services
+  hosts: tools:monitoring
+  become: true
+  roles:
+    - app-isolation

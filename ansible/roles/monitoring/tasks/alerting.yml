@@ -1,0 +1,57 @@
+---
+- name: Write Grafana contact point (Discord webhook from vault)
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/contactpoints.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+    owner: root
+    group: root
+    mode: "0640"
+  no_log: true
+  diff: false
+  notify: Reload Grafana alerting
+
+- name: Install compact Discord notification templates
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/templates.yml
+    dest: /opt/monitoring/grafana/provisioning/alerting/templates.yml
+    mode: "0644"
+  notify: Reload Grafana alerting
+
+- name: Write Grafana alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/rules.yml
+    mode: "0644"
+  notify: Reload Grafana alerting
+
+- name: Write Proxmox disk and resource alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/health-rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/proxmox.yml
+    mode: "0644"
+  vars:
+    health_alert_group: proxmox-health
+    health_alerts: "{{ monitoring_proxmox_alerts }}"
+    health_alert_labels: { service: proxmox }
+    health_alert_no_data: OK
+  when: proxmox_ip is defined
+  notify: Reload Grafana alerting
+
+- name: Write Sindri storage and Penpot alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/health-rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/sindri.yml
+    mode: "0644"
+  vars:
+    health_alert_group: sindri-health
+    health_alerts: "{{ monitoring_sindri_alerts }}"
+    health_alert_labels: { host: tools-01, service: sindri }
+    health_alert_no_data: Alerting
+  notify: Reload Grafana alerting
+
+- name: Route Grafana alerts to the Discord contact point
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/policies.yml
+    dest: /opt/monitoring/grafana/provisioning/alerting/policies.yml
+    mode: "0644"
+  notify: Reload Grafana alerting

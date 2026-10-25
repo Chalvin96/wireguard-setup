@@ -8,4 +8,6 @@ contactPoints:
         type: discord
         settings:
           url: "{{ vault_grafana_discord_webhook }}"
+          title: '{% raw %}{{ template "homelab.discord.title" . }}{% endraw %}'
+          message: '{% raw %}{{ template "homelab.discord.message" . }}{% endraw %}'
         disableResolveMessage: false

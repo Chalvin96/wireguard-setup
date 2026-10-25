@@ -1,0 +1,15 @@
+---
+- name: Collect Sindri application health
+  hosts: tools
+  become: true
+  roles:
+    - sindri-monitoring
+
+- name: Add Sindri alerts to the existing monitoring stack
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Apply shared alert provisioning
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: alerting

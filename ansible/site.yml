@@ -1,46 +1,69 @@
 ---
-# Full stack deploy — runs in dependency order.
-# Run: ansible-playbook ansible/site.yml --vault-password-file .vault_password
-
 - name: VPS — ingress stack
   hosts: ingress
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
     - network
     - distribution
   roles:
-    - wireguard-server
-    - haproxy
-    - vps-blocklist
-    - fail2ban
-    - crowdsec
+    - { role: wireguard-server, tags: [wireguard-server] }
+    - { role: haproxy, tags: [haproxy] }
+    - { role: vps-blocklist, tags: [vps-blocklist] }
+    - { role: fail2ban, tags: [fail2ban] }
+    - { role: crowdsec, tags: [crowdsec] }
 
 - name: Mikrotik — WireGuard tunnel and CGNAT watchdog
   hosts: mikrotik
+  force_handlers: true
   gather_facts: false
   roles:
-    - mikrotik-wireguard
+    - { role: mikrotik-wireguard, tags: [mikrotik-wireguard] }
 
 - name: Edge — reverse proxy + security stack
   hosts: edge
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
     - network
     - distribution
   roles:
-    - caddy
-    - fail2ban
-    - promtail
-    - crowdsec
+    - { role: caddy, tags: [caddy] }
+    - { role: fail2ban, tags: [fail2ban] }
+    - { role: promtail, tags: [promtail] }
+    - { role: crowdsec, tags: [crowdsec] }
+    - { role: notify, tags: [notify] }
 
 - name: Monitoring VM — observability stack
   hosts: monitoring
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
     - network
     - distribution
   roles:
-    - monitoring
+    - { role: app-isolation, tags: [app-isolation] }
+    - { role: monitoring, tags: [monitoring] }
+
+- name: Tools VM — Penpot + self-hosted CI runners
+  hosts: tools
+  force_handlers: true
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - { role: docker, tags: [docker] }
+    - { role: app-isolation, tags: [app-isolation] }
+    - { role: penpot, tags: [penpot] }
+    - { role: github-runner, tags: [github-runner] }
+    - { role: sindri-monitoring, tags: [sindri-monitoring] }
+    - { role: ci-maintenance, tags: [ci-maintenance] }
+
+- name: Include Proxmox host monitoring
+  ansible.builtin.import_playbook: proxmox-monitoring.yml
+  tags: [proxmox-monitoring]

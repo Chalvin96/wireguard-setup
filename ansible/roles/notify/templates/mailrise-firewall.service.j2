@@ -1,0 +1,13 @@
+# Managed by Ansible — loads only the `inet mailrise` nftables table.
+[Unit]
+Description=nftables rules for Mailrise (LAN-only SMTP)
+Before=mailrise.service
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/mailrise.nft
+
+[Install]
+WantedBy=multi-user.target

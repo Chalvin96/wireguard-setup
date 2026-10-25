@@ -1,0 +1,14 @@
+---
+- name: Apply mailrise firewall
+  ansible.builtin.systemd:
+    name: mailrise-firewall
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Restart mailrise
+  ansible.builtin.systemd:
+    name: mailrise
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode

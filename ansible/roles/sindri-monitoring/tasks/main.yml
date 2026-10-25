@@ -1,0 +1,44 @@
+---
+- name: Install bounded HTTP probes and host metrics
+  ansible.builtin.apt:
+    name: [curl, prometheus-node-exporter]
+    state: present
+
+- name: Create the health metrics directory
+  ansible.builtin.file:
+    path: /var/lib/prometheus/node-exporter
+    state: directory
+    mode: "0755"
+
+- name: Enable the Node Exporter textfile collector
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: "^ARGS="
+    line: 'ARGS="--collector.textfile.directory=/var/lib/prometheus/node-exporter"'
+  notify: Restart Sindri exporter
+
+- name: Install the Penpot health collector
+  ansible.builtin.template:
+    src: sindri-health.sh.j2
+    dest: /usr/local/sbin/sindri-health
+    mode: "0750"
+
+- name: Install health service and timer
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [sindri-health.service, sindri-health.timer]
+
+- name: Enable one-minute health collection
+  ansible.builtin.systemd:
+    name: sindri-health.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: not ansible_check_mode
+
+- name: Collect the first sample
+  ansible.builtin.command: /usr/local/sbin/sindri-health
+  changed_when: false
+  when: not ansible_check_mode

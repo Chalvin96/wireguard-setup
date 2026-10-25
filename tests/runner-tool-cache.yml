@@ -1,0 +1,25 @@
+---
+- name: Test checksummed Node tool cache provisioning
+  hosts: all
+  become: true
+  vars:
+    github_runner_user: github-runner
+    github_runner_home: /var/lib/actions-runner
+  vars_files:
+    - ../ansible/roles/github-runner/defaults/main.yml
+  tasks:
+    - name: Install Node archive and runtime dependencies
+      ansible.builtin.apt:
+        name: [xz-utils, libatomic1]
+        state: present
+
+    - name: Create the distribution cache
+      ansible.builtin.file:
+        path: "{{ github_runner_home }}/dist"
+        state: directory
+        owner: "{{ github_runner_user }}"
+        group: "{{ github_runner_user }}"
+        mode: "0755"
+
+    - name: Provision and verify setup-node compatible caches
+      ansible.builtin.include_tasks: ../ansible/roles/github-runner/tasks/tool-cache.yml

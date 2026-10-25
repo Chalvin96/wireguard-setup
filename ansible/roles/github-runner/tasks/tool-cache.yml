@@ -1,0 +1,57 @@
+---
+- name: Create a shared Node tool cache for both repository runners
+  ansible.builtin.file:
+    path: "{{ github_runner_tool_cache }}/node/{{ item }}/x64"
+    state: directory
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0755"
+  loop: "{{ github_runner_node_versions }}"
+
+- name: Download pinned Node distributions directly from the official CDN
+  ansible.builtin.get_url:
+    url: "https://nodejs.org/dist/v{{ item }}/node-v{{ item }}-linux-x64.tar.xz"
+    dest: "{{ github_runner_home }}/dist/node-v{{ item }}-linux-x64.tar.xz"
+    checksum: "sha256:https://nodejs.org/dist/v{{ item }}/SHASUMS256.txt"
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0644"
+    timeout: 30
+  register: github_runner_node_download
+  retries: 3
+  delay: 5
+  until: github_runner_node_download is succeeded
+  loop: "{{ github_runner_node_versions }}"
+
+- name: Populate setup-node compatible cache entries
+  ansible.builtin.unarchive:
+    src: "{{ github_runner_home }}/dist/node-v{{ item }}-linux-x64.tar.xz"
+    dest: "{{ github_runner_tool_cache }}/node/{{ item }}/x64"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    creates: "{{ github_runner_tool_cache }}/node/{{ item }}/x64.complete"
+  loop: "{{ github_runner_node_versions }}"
+  when: not ansible_check_mode
+
+- name: Verify cached Node binaries before marking them complete
+  ansible.builtin.command: "{{ github_runner_tool_cache }}/node/{{ item }}/x64/bin/node --version"
+  become: true
+  become_user: "{{ github_runner_user }}"
+  register: github_runner_cached_node
+  changed_when: false
+  failed_when: github_runner_cached_node.stdout != 'v' + item
+  loop: "{{ github_runner_node_versions }}"
+  when: not ansible_check_mode
+
+- name: Mark verified cache entries complete for setup-node
+  ansible.builtin.copy:
+    dest: "{{ github_runner_tool_cache }}/node/{{ item }}/x64.complete"
+    content: ""
+    owner: "{{ github_runner_user }}"
+    group: "{{ github_runner_user }}"
+    mode: "0644"
+  loop: "{{ github_runner_node_versions }}"
+  when: not ansible_check_mode

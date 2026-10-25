@@ -17,7 +17,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: "(1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"}) * 100"
+              expr: "(1 - node_filesystem_avail_bytes{job=\"node-exporter\",mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{job=\"node-exporter\",mountpoint=\"/\",fstype!=\"tmpfs\"}) * 100"
               instant: false
               refId: A
           - refId: C
@@ -45,6 +45,8 @@ groups:
         for: 5m
         annotations:
           summary: "Monitoring VM disk usage exceeded {{ grafana_disk_alert_threshold }}%"
+          description: "Check monitoring storage usage and retention."
         labels:
+          host: monitoring-01
           severity: warning
         isPaused: false

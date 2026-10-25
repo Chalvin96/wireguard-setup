@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Prettier
+        entry: prettier --write
+        language: node
+        additional_dependencies: [prettier@3.9.9]
+        files: '(\.(ya?ml|json|md|ya?ml\.example)$|(^|/)\.ansible-lint$)'
+        exclude: ^(ansible/group_vars/all/(config|vault)\.yml|\.collections/|infra/proxmox/\.terraform/)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

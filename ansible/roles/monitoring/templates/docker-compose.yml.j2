@@ -32,6 +32,9 @@ services:
       GF_SECURITY_ADMIN_USER: "{{ vault_grafana_admin_user }}"
       GF_SECURITY_ADMIN_PASSWORD: "{{ vault_grafana_admin_password }}"
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DATABASE_WAL: "true"
+      GF_DATABASE_QUERY_RETRIES: "3"
+      GF_SERVER_ROOT_URL: "http://{{ monitoring_ip }}:{{ grafana_port }}/"
     volumes:
       - ./grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -42,6 +45,7 @@ services:
       - prometheus
 
   glitchtip-postgres:
+    networks: [glitchtip]
     image: {{ glitchtip_postgres_image }}
     restart: unless-stopped
     environment:
@@ -50,12 +54,14 @@ services:
       - glitchtip-postgres-data:/var/lib/postgresql
 
   glitchtip-valkey:
+    networks: [glitchtip]
     image: {{ glitchtip_valkey_image }}
     restart: unless-stopped
     volumes:
       - glitchtip-valkey-data:/data
 
   glitchtip:
+    networks: [glitchtip]
     image: {{ glitchtip_image }}
     restart: unless-stopped
     depends_on:
@@ -80,3 +86,8 @@ volumes:
   glitchtip-postgres-data:
   glitchtip-valkey-data:
   glitchtip-uploads:
+
+networks:
+  glitchtip:
+    driver_opts:
+      com.docker.network.bridge.name: br-glitchtip

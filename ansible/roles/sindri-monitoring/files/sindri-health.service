@@ -1,0 +1,9 @@
+[Unit]
+Description=Probe Penpot API and database for Prometheus
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sindri-health
+TimeoutStartSec=20s
+Nice=10

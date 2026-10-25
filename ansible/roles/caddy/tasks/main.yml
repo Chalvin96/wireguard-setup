@@ -74,6 +74,7 @@
     owner: root
     group: root
   no_log: true
+  diff: false
   notify: Restart Caddy
 
 - name: Configure Caddy systemd environment file

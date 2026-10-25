@@ -2,7 +2,8 @@
 
 ![ansible-lint](https://github.com/Chalvin96/wireguard-setup/actions/workflows/lint.yml/badge.svg)
 
-A single-command Ansible project that provisions a hardened 3-node homelab:
+A single-command Ansible project for ingress, edge and monitoring services,
+with an optional tools host:
 **WireGuard** tunneling, **HAProxy** TCP forwarding with PROXY Protocol v2,
 **CrowdSec** threat detection + 13 proactive blocklist feeds, **fail2ban** SSH
 defense, **Caddy** TLS reverse proxy, a full **Loki → Prometheus → Grafana**
@@ -99,7 +100,7 @@ outside Ansible's control.
 | **VPS** (Hetzner/DigitalOcean) | `ingress-01`    | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH)              |
 | **Mini PC**                    | `edge-01`       | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail, Mailrise |
 | **Monitoring VM**              | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose)                                                   |
-| **Tools VM** (Proxmox)         | `tools-01`      | Penpot, self-hosted GitHub Actions runners, node-exporter                                    |
+| **Tools host**                 | `tools-01`      | Penpot, self-hosted GitHub Actions runners, node-exporter                                    |
 
 ## Security Design
 
@@ -230,10 +231,10 @@ ssh -i <vps_ban private key> banagent@<ingress_ip> "203.0.113.5 3600"
 ansible-playbook ansible/unban.yml
 ```
 
-## Tools VM
+## Tools host
 
-VM hardware can be provisioned with [OpenTofu](infra/proxmox/README.md).
-Existing VMs are not adopted automatically; import and review their plans first.
+The tools host runs on Debian/Ubuntu, either on a standalone machine or in a VM.
+Proxmox is not required.
 
 Create separate boot and service-data storage before deployment. Mount the
 service-data filesystem at `/srv` using a UUID in fstab; the roles assume it is
@@ -274,12 +275,15 @@ Penpot backend, change the database role password with an interactive `psql`
 `\password penpot` command, update the vault value, and redeploy. Keep the old
 credential available for rollback until login succeeds. Do not put the password
 in shell arguments or logs. Backups share the data disk; copy a verified backup
-off the VM for protection against disk loss.
+off the host for protection against disk loss.
+
+For optional Proxmox VM provisioning, see the [OpenTofu guide](infra/proxmox/README.md).
+Existing VMs must be imported and their plans reviewed before applying changes.
 
 ## Sindri monitoring
 
-The monitoring VM scrapes tools-01's existing Node Exporter. In Grafana, open
-**Sindri — Tools VM** (`/d/sindri-tools`) for availability, uptime, CPU, memory,
+The monitoring host scrapes tools-01's existing Node Exporter. In Grafana, open
+the Sindri dashboard (`/d/sindri-tools`) for availability, uptime, CPU, memory,
 boot/data disk usage, and network traffic. This is host monitoring; it does not claim
 that Penpot requests or GitHub workflow jobs are successful.
 

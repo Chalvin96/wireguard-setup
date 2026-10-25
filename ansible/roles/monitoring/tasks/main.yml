@@ -1,5 +1,4 @@
 ---
-# ── Docker CE ──────────────────────────────────────────────────────────────────
 - name: Install Docker dependencies
   ansible.builtin.apt:
     name:
@@ -53,7 +52,6 @@
     enabled: true
     state: started
 
-# ── Node Exporter ──────────────────────────────────────────────────────────────
 - name: Install Node Exporter
   ansible.builtin.apt:
     name: prometheus-node-exporter
@@ -66,7 +64,6 @@
     enabled: true
     state: started
 
-# ── Bind mounts ────────────────────────────────────────────────────────────────
 - name: Create /opt/monitoring directory tree
   ansible.builtin.file:
     path: "{{ item }}"
@@ -105,7 +102,6 @@
     state: directory
     mode: "0755"
 
-# ── Config files ───────────────────────────────────────────────────────────────
 - name: Write docker-compose.yml
   ansible.builtin.template:
     src: docker-compose.yml.j2
@@ -131,7 +127,6 @@
     mode: "0644"
   notify: Reload Prometheus
 
-# ── Grafana provisioning ───────────────────────────────────────────────────────
 - name: Copy Grafana datasources
   ansible.builtin.copy:
     src: grafana/provisioning/datasources/datasources.yml
@@ -213,7 +208,6 @@
     mode: "0644"
   when: proxmox_ip is defined
 
-# ── Start stack ────────────────────────────────────────────────────────────────
 - name: Start monitoring stack
   community.docker.docker_compose_v2:
     project_src: /opt/monitoring

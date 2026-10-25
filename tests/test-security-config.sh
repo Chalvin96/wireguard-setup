@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import yaml
 
-# Secret destinations must protect both controller output and local readers.
 roles = Path('ansible/roles')
 for path, destinations in (
     (roles / 'wireguard-server/tasks/main.yml', {'/etc/wireguard/wg0.conf': '0600'}),

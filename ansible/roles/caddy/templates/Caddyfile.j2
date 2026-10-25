@@ -1,5 +1,4 @@
 # Managed by Ansible — do not edit manually
-# Site blocks go in /etc/caddy/conf.d/*.caddy
 {
     admin 127.0.0.1:2019
     metrics
@@ -25,7 +24,6 @@ http://{{ edge_ip }}:2019 {
     }
 }
 
-# Reusable JSON access logging — import in site blocks
 (access_log) {
     log {
         output file /var/log/caddy/access.log {
@@ -39,7 +37,6 @@ http://{{ edge_ip }}:2019 {
 
 import /etc/caddy/conf.d/*.caddy
 
-# ── Ansible-managed sites (caddy_sites) ──────────────────────────────────────
 # Rendered here, not in conf.d, so `caddy validate` checks them before reload.
 {% for site in caddy_sites | default([]) %}
 {{ site.host }} {

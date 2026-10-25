@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Clone-and-run entry point. Needs only `uv` and an SSH key authorized as `deploy`.
-#
-#   ./run.sh                     deploy everything (site.yml)
-#   ./run.sh edge-01             deploy one host or group (--limit)
-#   ./run.sh edge-01 --check --diff
-#   ./run.sh bootstrap [args]    create/authorize the deploy user (bootstrap.yml)
-#   ./run.sh edit-config         create or edit the encrypted group_vars/all/config.yml
-#   ./run.sh edit-vault          edit the encrypted group_vars/all/vault.yml
-#   ./run.sh lint                ansible-lint with the CI pins
-#
-# The vault password comes from ./.vault_password when present; otherwise it is
-# asked once per run and kept in RAM (/dev/shm) until the script exits.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -37,8 +25,6 @@ install_collections() {
   run_ansible_tool ansible-galaxy collection install -r ansible/requirements.yml -p .collections >/dev/null
 }
 
-# Plaintext files created by this script (password, new config) are removed on
-# exit, including on errors and Ctrl-C.
 TEMP_FILES=()
 cleanup_temp_files() {
   local file
@@ -48,8 +34,6 @@ cleanup_temp_files() {
 }
 trap cleanup_temp_files EXIT
 
-# Sets VAULT_PASS_FILE: ./.vault_password when present (must be mode 0600),
-# otherwise a RAM-only file holding a password read from the terminal.
 VAULT_PASS_FILE=""
 resolve_vault_password_file() {
   if [[ -f .vault_password ]]; then
@@ -87,7 +71,6 @@ edit_config() {
   EDITOR="${EDITOR:-nano}" run_ansible_tool ansible-vault edit --vault-password-file "$vault_pass_file" "$K_CONFIG"
 }
 
-# A leading flag (./run.sh --check --diff) means "all hosts".
 if [[ $# -eq 0 || "$1" == -* ]]; then
   command="all"
 else

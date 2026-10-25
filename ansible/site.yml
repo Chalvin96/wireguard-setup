@@ -1,10 +1,7 @@
 ---
-# Full stack deploy — runs in dependency order.
-# Run: ansible-playbook ansible/site.yml --vault-password-file .vault_password
-
 - name: VPS — ingress stack
   hosts: ingress
-  force_handlers: true # a later failure must not drop pending restarts
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
@@ -19,14 +16,14 @@
 
 - name: Mikrotik — WireGuard tunnel and CGNAT watchdog
   hosts: mikrotik
-  force_handlers: true # a later failure must not drop pending restarts
+  force_handlers: true
   gather_facts: false
   roles:
     - { role: mikrotik-wireguard, tags: [mikrotik-wireguard] }
 
 - name: Edge — reverse proxy + security stack
   hosts: edge
-  force_handlers: true # a later failure must not drop pending restarts
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
@@ -41,7 +38,7 @@
 
 - name: Monitoring VM — observability stack
   hosts: monitoring
-  force_handlers: true # a later failure must not drop pending restarts
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:
@@ -52,7 +49,7 @@
 
 - name: Tools VM — Penpot + self-hosted CI runners
   hosts: tools
-  force_handlers: true # a later failure must not drop pending restarts
+  force_handlers: true
   become: true
   gather_facts: true
   gather_subset:

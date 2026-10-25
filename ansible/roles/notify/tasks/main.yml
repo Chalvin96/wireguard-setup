@@ -1,12 +1,4 @@
 ---
-# Internal notification gateway on edge-01: Mailrise accepts SMTP on the LAN and
-# forwards each message through Apprise to Discord. Senders pick the channel by
-# recipient address: <channel>@mailrise.lan (keys of vault_notify_discord_webhooks).
-# LAN only — port {{ notify_port }} is never forwarded from the VPS, and nftables
-# drops it from anything outside wireguard_lan_cidr.
-# Self-contained: a Python venv + systemd unit, no Docker or other roles required.
-
-# ── Install ────────────────────────────────────────────────────────────────────
 - name: Install Python venv and nftables CLI
   ansible.builtin.apt:
     name:
@@ -31,9 +23,7 @@
   when: not ansible_check_mode or notify_venv.stat.exists
   notify: Restart mailrise
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-# Static system account: readable access to the config via its group. (A
-# DynamicUser= unit would claim the same name and collide with this group.)
+# DynamicUser would collide with the static group used to read the secret config.
 - name: Create mailrise system group
   ansible.builtin.group:
     name: mailrise
@@ -66,11 +56,7 @@
     mode: "0644"
   notify: Restart mailrise
 
-# ── Firewall (applied before the listener starts) ─────────────────────────────
-# Loaded by its own oneshot unit, touching only the `inet mailrise` table. The
-# global nftables service is deliberately not reloaded: Debian's default
-# /etc/nftables.conf begins with `flush ruleset`, which would also wipe CrowdSec
-# bouncer and Docker rules on this host.
+# Apply only the Mailrise table; a global reload would flush CrowdSec and Docker rules.
 - name: Create /etc/nftables.d directory
   ansible.builtin.file:
     path: /etc/nftables.d
@@ -92,9 +78,7 @@
     mode: "0644"
   notify: Apply mailrise firewall
 
-# Other roles on this host reload the global nftables service, which runs
-# /etc/nftables.conf (`flush ruleset` on Debian). Including the table there makes
-# every such reload re-create it. Deliberately no reload is triggered here.
+# Include the table so global firewall reloads restore the SMTP restriction.
 - name: Include mailrise table in /etc/nftables.conf
   ansible.builtin.lineinfile:
     path: /etc/nftables.conf
@@ -112,7 +96,6 @@
 - name: Flush handlers so the firewall rule and unit are current
   ansible.builtin.meta: flush_handlers
 
-# ── Start ──────────────────────────────────────────────────────────────────────
 - name: Enable and start Mailrise
   ansible.builtin.systemd:
     name: mailrise

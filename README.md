@@ -245,7 +245,8 @@ Bind the Docker and runner `/var/lib` directories from `/srv` as described in
 maintenance copy and verification; do not mount over live data.
 
 - **docker** installs separate rootless Docker daemons for applications (`apps`)
-  and CI (`github-runner`), each with log rotation and a weekly prune timer.
+  and CI (`github-runner`), both with log rotation. Apps use weekly pruning;
+  CI uses the idle-aware cleanup schedule.
 - **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
   `pg_dump` + assets archive into `/srv/backups/penpot`.
 - **github-runner** registers one runner per repository in
@@ -360,7 +361,7 @@ roles/
 ├── promtail/            # edge-01: log shipping to Loki
 ├── notify/              # edge-01: Mailrise SMTP → Apprise → Discord (LAN only)
 ├── monitoring/          # monitoring-01: Docker Compose observability stack
-├── docker/              # tools-01: Docker CE, log rotation, weekly prune
+├── docker/              # tools-01: rootless Docker and apps-only weekly prune
 ├── penpot/              # tools-01: Penpot stack + nightly backup timer
 └── github-runner/       # tools-01: per-repository Actions runners (private repos only)
 ```

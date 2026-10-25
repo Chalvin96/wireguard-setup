@@ -342,6 +342,10 @@
       ansible.builtin.include_role:
         name: github-runner
 
+    - name: Install CI cleanup after cutover
+      ansible.builtin.include_role:
+        name: ci-maintenance
+
     - name: Report the retained rollback directory
       ansible.builtin.debug:
         msg: "Migration complete. Private rollback files: {{ rootless_rollback.path }}. Keep them until Penpot and CI have been verified."

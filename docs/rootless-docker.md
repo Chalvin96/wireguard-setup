@@ -32,6 +32,8 @@ inventories and a Penpot backup pass verification; only then remove the original
 Neither account belongs to the root-equivalent `docker` group. Their homes
 and runtime directories are private. Rootful Docker is masked after migration.
 Both daemons start at boot through systemd user services with lingering enabled.
+Apps use weekly pruning; CI cleanup is owned by `ci-maintenance`, installed by
+both normal deployment and the migration playbook.
 
 The traditional `/var/run/docker.sock` path points to **CI's** socket because
 GitHub's built-in job-container handling mounts that exact path. It must never

@@ -1,0 +1,43 @@
+---
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+
+- name: Create firewall configuration directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Install VPS ingress firewall
+  ansible.builtin.template:
+    src: vps-firewall.nft.j2
+    dest: /etc/nftables.d/vps-firewall.nft
+    mode: "0600"
+    validate: nft --check -f %s
+  diff: false
+  notify: Apply VPS firewall
+
+- name: Preserve WireGuard NAT and dynamic ban tables when loading nftables
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    regexp: "^flush ruleset$"
+    state: absent
+
+- name: Include the VPS firewall at boot
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/vps-firewall.nft"'
+  notify: Apply VPS firewall
+
+- name: Enable nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
+- name: Apply pending VPS rules
+  ansible.builtin.meta: flush_handlers

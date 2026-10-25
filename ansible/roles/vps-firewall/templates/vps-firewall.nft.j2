@@ -1,0 +1,16 @@
+add table inet vps_firewall
+add chain inet vps_firewall input { type filter hook input priority 0; policy drop; }
+add chain inet vps_firewall forward { type filter hook forward priority -5; policy accept; }
+flush chain inet vps_firewall input
+flush chain inet vps_firewall forward
+add rule inet vps_firewall input iifname "lo" accept
+add rule inet vps_firewall input ct state established,related accept
+add rule inet vps_firewall input ct state invalid drop
+add rule inet vps_firewall input ip protocol icmp accept
+add rule inet vps_firewall input meta l4proto ipv6-icmp accept
+add rule inet vps_firewall input tcp dport { {{ ansible_port | default(22) }}, {{ haproxy_http_port }}, {{ haproxy_https_port }} } accept
+add rule inet vps_firewall input udp dport {{ wireguard_port }} accept
+add rule inet vps_firewall input iifname "{{ ansible_default_ipv4.interface }}" meta nfproto ipv4 udp sport 67 udp dport 68 accept
+add rule inet vps_firewall input iifname "{{ ansible_default_ipv4.interface }}" meta nfproto ipv6 udp sport 547 udp dport 546 accept
+add rule inet vps_firewall forward ct state established,related accept
+add rule inet vps_firewall forward iifname "{{ ansible_default_ipv4.interface }}" counter drop

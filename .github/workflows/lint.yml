@@ -36,11 +36,13 @@ jobs:
           bash tests/test-security-config.sh
           bash tests/test-monitoring-alerts.sh
 
-      - name: Check application network isolation
+      - name: Check network isolation and VPS firewall
         run: |
           sudo apt-get install -y --no-install-recommends nftables iproute2
           python tests/test_app_isolation.py render "$RUNNER_TEMP/app-isolation.nft"
           sudo unshare --net "$(command -v python)" tests/test_app_isolation.py "$RUNNER_TEMP/app-isolation.nft"
+          python tests/test_vps_firewall.py render "$RUNNER_TEMP/vps-firewall.nft"
+          sudo unshare --net "$(command -v python)" tests/test_vps_firewall.py "$RUNNER_TEMP/vps-firewall.nft"
 
       - name: Run ansible-lint
         run: cd ansible && ansible-lint

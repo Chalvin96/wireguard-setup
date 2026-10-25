@@ -8,6 +8,7 @@
     - network
     - distribution
   roles:
+    - { role: vps-firewall, tags: [vps-firewall] }
     - { role: wireguard-server, tags: [wireguard-server] }
     - { role: haproxy, tags: [haproxy] }
     - { role: vps-blocklist, tags: [vps-blocklist] }

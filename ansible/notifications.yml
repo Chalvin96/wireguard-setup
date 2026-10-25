@@ -1,0 +1,50 @@
+---
+- name: Update Discord notification formatting
+  hosts: monitoring
+  become: true
+  vars_files:
+    - roles/monitoring/defaults/main.yml
+  tasks:
+    - name: Install notification templates
+      ansible.builtin.copy:
+        src: roles/monitoring/files/grafana/provisioning/alerting/templates.yml
+        dest: /opt/monitoring/grafana/provisioning/alerting/templates.yml
+        mode: "0644"
+      register: discord_templates
+
+    - name: Configure compact Discord messages
+      ansible.builtin.template:
+        src: roles/monitoring/templates/grafana/provisioning/alerting/contactpoints.yml.j2
+        dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+        owner: root
+        group: root
+        mode: "0640"
+      register: discord_contact
+      no_log: true
+      diff: false
+
+    - name: Install readable alert measurements and actions
+      ansible.builtin.template:
+        src: "roles/monitoring/templates/grafana/provisioning/alerting/{{ item }}.yml.j2"
+        dest: "/opt/monitoring/grafana/provisioning/alerting/{{ item }}.yml"
+        mode: "0644"
+      loop: [sindri, proxmox, rules]
+      register: discord_rules
+
+    - name: Reload notification provisioning
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - monitoring-grafana-1
+          - sh
+          - -c
+          - >-
+            curl --fail --silent --show-error --max-time 60
+            --user "$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD"
+            --request POST http://localhost:3000/api/admin/provisioning/alerting/reload
+      when: >-
+        not ansible_check_mode and
+        (discord_templates.changed or discord_contact.changed or discord_rules.changed)
+      changed_when: true
+      no_log: true

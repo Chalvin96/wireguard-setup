@@ -1,0 +1,6 @@
+---
+- name: Monitor Proxmox SATA disks, storage and host resources
+  hosts: proxmox
+  become: true
+  roles:
+    - role: proxmox-monitoring

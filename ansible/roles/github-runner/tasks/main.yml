@@ -5,10 +5,11 @@
       - github_runner_repos | map(attribute='repo') | list | unique | length == github_runner_repos | length
     fail_msg: Runner directories and service instances require unique repository names, including across owners.
 
-- name: Install runner provisioning and Node runtime dependencies
+- name: Install runner tooling and runtime dependencies
   ansible.builtin.apt:
     name:
       - acl
+      - gh
       - xz-utils
       - libatomic1
     state: present

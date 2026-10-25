@@ -1,0 +1,48 @@
+---
+- name: Bound idle CI storage
+  hosts: tools
+  become: true
+  roles:
+    - ci-maintenance
+
+- name: Reduce hypervisor swap preference
+  hosts: proxmox
+  become: true
+  tasks:
+    - name: Prefer reclaiming cache over swapping guest memory
+      ansible.posix.sysctl:
+        name: vm.swappiness
+        value: "10"
+        sysctl_file: /etc/sysctl.d/90-vm-swappiness.conf
+        sysctl_set: true
+        reload: true
+
+- name: Apply storage budgets and swap pressure alerts
+  hosts: monitoring
+  become: true
+  vars_files:
+    - roles/monitoring/defaults/main.yml
+  tasks:
+    - name: Install updated resource alerts
+      ansible.builtin.template:
+        src: "roles/monitoring/templates/grafana/provisioning/alerting/{{ item }}.yml.j2"
+        dest: "/opt/monitoring/grafana/provisioning/alerting/{{ item }}.yml"
+        mode: "0644"
+      loop: [sindri, proxmox]
+      register: maintenance_alerts
+
+    - name: Reload Grafana alert provisioning
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - monitoring-grafana-1
+          - sh
+          - -c
+          - >-
+            curl --fail --silent --show-error --max-time 60
+            --user "$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD"
+            --request POST http://localhost:3000/api/admin/provisioning/alerting/reload
+      when: maintenance_alerts.changed and not ansible_check_mode
+      changed_when: true
+      no_log: true

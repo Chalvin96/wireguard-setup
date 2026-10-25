@@ -1,0 +1,25 @@
+apiVersion: 1
+templates:
+  - orgId: 1
+    name: homelab-discord
+    template: |
+      {{ define "homelab.discord.title" -}}
+      {{ if eq .Status "resolved" }}✅ Resolved{{ else if eq .CommonLabels.severity "critical" }}🚨 Critical{{ else }}⚠ Warning{{ end }} · {{ "" -}}
+      {{ if eq .CommonLabels.service "sindri" }}Sindri
+      {{- else if eq .CommonLabels.service "proxmox" }}Proxmox
+      {{- else if eq .CommonLabels.host "monitoring-01" }}Hlidskjalf
+      {{- else }}Homelab
+      {{- end }}
+      {{- end }}
+
+      {{ define "homelab.discord.message" -}}
+      {{ range .Alerts -}}
+      {{ if eq .Status "resolved" }}✅ Cleared: {{ end }}**{{ or .Annotations.summary .Labels.alertname "Alert" }}**
+      {{ if ne .Status "resolved" -}}
+      {{ with .Annotations.measurement }}{{ . }}
+      {{ end -}}
+      {{ with .Annotations.description }}Next: {{ . }}
+      {{ end -}}
+      {{ end }}
+      {{ end -}}
+      {{ end }}

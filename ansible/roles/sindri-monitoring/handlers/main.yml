@@ -1,0 +1,7 @@
+---
+- name: Restart Sindri exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: restarted
+  when: not ansible_check_mode

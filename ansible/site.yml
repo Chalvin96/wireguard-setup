@@ -62,3 +62,9 @@
     - { role: docker, tags: [docker] }
     - { role: penpot, tags: [penpot] }
     - { role: github-runner, tags: [github-runner] }
+    - { role: sindri-monitoring, tags: [sindri-monitoring] }
+    - { role: ci-maintenance, tags: [ci-maintenance] }
+
+- name: Include Proxmox host monitoring
+  ansible.builtin.import_playbook: proxmox-monitoring.yml
+  tags: [proxmox-monitoring]

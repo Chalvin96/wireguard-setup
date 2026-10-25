@@ -14,6 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify private configuration stays encrypted
+        run: |
+          for file in ansible/group_vars/all/{config,vault}.yml; do
+            head -n 1 "$file" | grep -q '^\$ANSIBLE_VAULT;' || exit 1
+          done
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -24,6 +30,9 @@ jobs:
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Check secret handling
+        run: bash tests/test-security-config.sh
 
       - name: Run ansible-lint
         run: cd ansible && ansible-lint

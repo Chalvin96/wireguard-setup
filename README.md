@@ -164,8 +164,8 @@ Apprise. Channels are the keys of `vault_notify_discord_webhooks`.
 (Docker Compose):
 
 - **Promtail** ships Caddy + fail2ban logs from the edge to **Loki**.
-- **Prometheus** scrapes Caddy's `/metrics` endpoint (admin API bound to the LAN
-  IP, restricted to the Monitoring VM by nftables).
+- **Prometheus** scrapes Caddy's dedicated `/metrics` endpoint, restricted to
+  the Monitoring VM by nftables. Caddy administration stays on loopback.
 - **Grafana** ships with a provisioned homelab dashboard + a Discord alert when
   disk usage crosses the threshold.
 - **GlitchTip** runs self-hosted with its own Postgres + Valkey services and
@@ -282,6 +282,12 @@ The monitoring VM scrapes tools-01's existing Node Exporter. In Grafana, open
 **Sindri — Tools VM** (`/d/sindri-tools`) for availability, uptime, CPU, memory,
 boot/data disk usage, and network traffic. This is host monitoring; it does not claim
 that Penpot requests or GitHub workflow jobs are successful.
+
+One-minute Penpot API and SQL probes plus Sindri capacity alerts are provisioned
+with `ansible/sindri-monitoring.yml`. Grafana on monitoring-01 routes
+these alerts to the existing Discord contact point. See
+[storage and monitoring configuration](docs/sindri-storage.md) for isolation
+and deployment instructions.
 
 ## Contributor setup
 

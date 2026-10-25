@@ -4,6 +4,14 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+{% if proxmox_ip is defined %}
+  - job_name: proxmox
+    static_configs:
+      - targets:
+          - "{{ proxmox_ip }}:9100"
+        labels:
+          host: proxmox
+{% endif %}
   - job_name: caddy
     static_configs:
       - targets:

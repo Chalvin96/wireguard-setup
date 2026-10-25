@@ -1,0 +1,147 @@
+---
+monitoring_proxmox_alerts:
+  - uid: proxmox-exporter-down
+    title: Proxmox metrics unavailable
+    measurement: !unsafe ""
+    action: "Check the host and its metrics exporter."
+    expression: '1 - up{job="proxmox"}'
+    threshold: 0
+    duration: 3m
+    no_data: Alerting
+    severity: critical
+  - uid: proxmox-sata-offline
+    title: Proxmox SATA disk missing or unreadable
+    measurement: !unsafe ""
+    action: "Check host storage status and disk connections."
+    expression: '1 - homelab_disk_online{job="proxmox"}'
+    threshold: 0
+    duration: 1m
+    severity: critical
+  - uid: proxmox-sata-smart
+    title: Proxmox SATA SMART health failed
+    measurement: !unsafe ""
+    action: "Inspect disk SMART results and backup health."
+    expression: '1 - homelab_disk_smart_ok{job="proxmox"}'
+    threshold: 0
+    duration: 1m
+    severity: critical
+  - uid: proxmox-sata-sectors
+    title: Proxmox SATA damaged sectors
+    measurement: !unsafe 'Affected sectors: {{ printf "%.0f" $values.A.Value }}.'
+    action: "Inspect SMART results and verify backups."
+    expression: >-
+      homelab_disk_pending_sectors{job="proxmox"} + homelab_disk_uncorrectable_sectors{job="proxmox"}
+      + homelab_disk_reallocated_sectors{job="proxmox"}
+    threshold: 0
+    duration: 1m
+    severity: warning
+  - uid: proxmox-sata-temperature
+    title: Proxmox SATA disk hot
+    measurement: !unsafe 'Temperature: {{ printf "%.1f" $values.A.Value }} °C (warning above 49 °C).'
+    action: "Check disk cooling and airflow."
+    expression: 'homelab_disk_temperature_celsius{job="proxmox"}'
+    threshold: 49
+    duration: 10m
+    severity: warning
+  - uid: proxmox-storage-offline
+    title: Proxmox storage pool unavailable
+    measurement: !unsafe ""
+    action: "Check the affected storage pool and backing disks."
+    expression: '1 - homelab_storage_active{job="proxmox"}'
+    threshold: 0
+    duration: 1m
+    severity: critical
+  - uid: proxmox-storage-space
+    title: Proxmox storage space low
+    measurement: !unsafe 'Storage used: {{ printf "%.1f" $values.A.Value }}% (warning above 90%).'
+    action: "Review guest disk usage and unused storage."
+    expression: 'homelab_storage_used_percent{job="proxmox"}'
+    threshold: 90
+    duration: 10m
+    severity: warning
+  - uid: proxmox-thin-metadata
+    title: Proxmox thin-pool metadata nearly full
+    measurement: !unsafe 'Thin-pool metadata used: {{ printf "%.1f" $values.A.Value }}% (warning above 80%).'
+    action: "Check thin-pool capacity and metadata growth."
+    expression: 'homelab_thin_pool_metadata_percent{job="proxmox"}'
+    threshold: 80
+    duration: 5m
+    severity: warning
+  - uid: proxmox-disk-crc
+    title: Proxmox new SATA CRC errors
+    measurement: !unsafe 'New CRC errors over 15 min: {{ printf "%.0f" $values.A.Value }}.'
+    action: "Check disk cabling and controller connections."
+    expression: 'increase(homelab_disk_crc_errors_total{job="proxmox"}[15m])'
+    threshold: 0
+    duration: 1m
+    severity: warning
+  - uid: proxmox-kernel-storage
+    title: Proxmox new kernel storage errors
+    measurement: !unsafe 'New storage errors over 15 min: {{ printf "%.0f" $values.A.Value }}.'
+    action: "Inspect the host kernel and storage logs."
+    expression: 'increase(homelab_storage_kernel_errors_total{job="proxmox"}[15m])'
+    threshold: 0
+    duration: 1m
+    severity: critical
+  - uid: proxmox-health-stale
+    title: Proxmox SATA cron check overdue
+    measurement: !unsafe "Last health check: {{ humanizeDuration $values.A.Value }} ago (limit 15 min)."
+    action: "Check the scheduled host health job."
+    expression: 'time() - homelab_health_last_run_timestamp_seconds{job="proxmox"}'
+    threshold: 900
+    duration: 2m
+    no_data: Alerting
+    severity: critical
+  - uid: proxmox-health-errors
+    title: Proxmox disk or storage checker reports faults
+    measurement: !unsafe 'Health-check faults: {{ printf "%.0f" $values.A.Value }}.'
+    action: "Review the host health-check results."
+    expression: 'homelab_health_issue_count{job="proxmox"}'
+    threshold: 0
+    duration: 2m
+    severity: warning
+  - uid: proxmox-cpu-high
+    title: Proxmox sustained CPU usage high
+    measurement: !unsafe 'CPU usage: {{ printf "%.1f" $values.A.Value }}% (warning above 90%).'
+    action: "Inspect host processes and guest CPU usage."
+    expression: '100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job="proxmox",mode="idle"}[5m])))'
+    threshold: 90
+    duration: 15m
+    severity: warning
+  - uid: proxmox-memory-low
+    title: Proxmox available memory low
+    measurement: !unsafe 'Memory usage: {{ printf "%.1f" $values.A.Value }}% (warning above 90%).'
+    action: "Review guest memory allocations and consumers."
+    expression: '100 * (1 - node_memory_MemAvailable_bytes{job="proxmox"} / node_memory_MemTotal_bytes{job="proxmox"})'
+    threshold: 90
+    duration: 10m
+    severity: warning
+  - uid: proxmox-swap-pressure
+    title: Proxmox sustained swap pressure
+    measurement: !unsafe 'Swap-out: {{ printf "%.0f" $values.A.Value }} pages/s with memory pressure.'
+    action: "Check host memory pressure and guest allocations."
+    expression: >-
+      rate(node_vmstat_pswpout{job="proxmox"}[5m]) and on(instance)
+      ((node_memory_MemAvailable_bytes{job="proxmox"} / node_memory_MemTotal_bytes{job="proxmox"} < 0.10)
+      or (rate(node_pressure_memory_stalled_seconds_total{job="proxmox"}[5m]) > 0.01))
+    threshold: 256
+    duration: 10m
+    severity: warning
+  - uid: proxmox-io-pressure
+    title: Proxmox sustained disk IO pressure
+    measurement: !unsafe 'I/O stall time: {{ printf "%.1f" $values.A.Value }}% (warning above 20%).'
+    action: "Check disk latency and competing workloads."
+    expression: '100 * rate(node_pressure_io_waiting_seconds_total{job="proxmox"}[5m])'
+    threshold: 20
+    duration: 10m
+    severity: warning
+  - uid: proxmox-filesystem-space
+    title: Proxmox filesystem space low
+    measurement: !unsafe 'Filesystem used: {{ printf "%.1f" $values.A.Value }}% (warning above 90%).'
+    action: "Inspect host filesystem usage and retained files."
+    expression: >-
+      100 * (1 - node_filesystem_avail_bytes{job="proxmox",fstype=~"ext4|xfs|zfs"}
+      / node_filesystem_size_bytes{job="proxmox",fstype=~"ext4|xfs|zfs"})
+    threshold: 90
+    duration: 10m
+    severity: warning

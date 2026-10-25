@@ -1,0 +1,33 @@
+---
+- name: Collect Sindri application health
+  hosts: tools
+  become: true
+  roles:
+    - sindri-monitoring
+
+- name: Add Sindri alerts to the existing monitoring stack
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Install Sindri storage and application alerts
+      ansible.builtin.template:
+        src: roles/monitoring/templates/grafana/provisioning/alerting/sindri.yml.j2
+        dest: /opt/monitoring/grafana/provisioning/alerting/sindri.yml
+        mode: "0644"
+      register: sindri_alert_file
+
+    - name: Reload Grafana alert provisioning without restarting the stack
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - monitoring-grafana-1
+          - sh
+          - -c
+          - >-
+            curl --fail --silent --show-error --max-time 60
+            --user "$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD"
+            --request POST http://localhost:3000/api/admin/provisioning/alerting/reload
+      when: sindri_alert_file.changed and not ansible_check_mode
+      changed_when: true
+      no_log: true

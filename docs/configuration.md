@@ -1,14 +1,16 @@
 # Configuration reference
 
-Two files hold all configuration, both created by copying the `.example`
-next to them. The real files are gitignored.
+The inventory and both encrypted variable files are tracked. Real addresses,
+domains and secrets belong only in the encrypted files; examples use placeholders.
+Do not copy an example over a tracked encrypted file.
+
+## Deployment variables — `config.yml`
+
+Create or edit encrypted configuration with:
 
 ```bash
-cp ansible/inventory/hosts.yml.example        ansible/inventory/hosts.yml
-cp ansible/group_vars/all/config.yml.example  ansible/group_vars/all/config.yml
+./run.sh edit-config
 ```
-
-## Plain variables — `config.yml`
 
 See [`config.yml.example`](../ansible/group_vars/all/config.yml.example) for
 the full annotated list.
@@ -34,7 +36,7 @@ no reverse proxy route yet, use `http://<monitoring_ip>:8000`.
 Edit with:
 
 ```bash
-ansible-vault edit ansible/group_vars/all/vault.yml
+./run.sh edit-vault
 ```
 
 GlitchTip adds:

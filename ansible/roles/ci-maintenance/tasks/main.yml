@@ -1,0 +1,50 @@
+---
+- name: Install cron and cleanup locking
+  ansible.builtin.apt:
+    name: [cron, util-linux]
+    state: present
+
+- name: Create cleanup metrics directory
+  ansible.builtin.file:
+    path: /var/lib/prometheus/node-exporter
+    state: directory
+    mode: "0755"
+
+- name: Install CI cleanup
+  ansible.builtin.template:
+    src: ci-cleanup.sh.j2
+    dest: /usr/local/sbin/ci-cleanup
+    mode: "0750"
+
+- name: Schedule idle CI cleanup every thirty minutes
+  ansible.builtin.cron:
+    name: Clean unused CI storage
+    cron_file: ci-cleanup
+    user: root
+    minute: "*/30"
+    job: /usr/bin/timeout --kill-after=30s 40m /usr/local/sbin/ci-cleanup 2>&1 | /usr/bin/logger -t ci-cleanup
+
+- name: Read CI account ID
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ github_runner_user }}"
+
+- name: Disable the superseded weekly CI prune timer
+  ansible.builtin.systemd:
+    name: docker-prune.timer
+    scope: user
+    enabled: false
+    state: stopped
+  become: true
+  become_user: "{{ github_runner_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[github_runner_user][1] }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts.getent_passwd[github_runner_user][1] }}/bus"
+  when: not ansible_check_mode
+
+- name: Enable cron
+  ansible.builtin.systemd:
+    name: cron
+    enabled: true
+    state: started
+  when: not ansible_check_mode

@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+metrics=$(mktemp /var/lib/prometheus/node-exporter/sindri-health.XXXXXX)
+trap 'rm -f "$metrics"' EXIT
+
+api_up=0
+if duration=$(curl --fail --silent --max-time 5 --output /dev/null \
+    --write-out '%{time_total}' http://{{ tools_ip }}:9001/api/rpc/command/get-profile); then
+    api_up=1
+fi
+
+database_up=0
+apps_uid=$(id -u apps)
+if result=$(timeout 5 runuser -u apps -- docker --host "unix:///run/user/$apps_uid/docker.sock" \
+    exec penpot-penpot-postgres-1 psql -U penpot -d penpot -Atc 'SELECT 1;' 2>/dev/null) \
+    && [[ "$result" == 1 ]]; then
+    database_up=1
+fi
+
+cat > "$metrics" <<EOF
+sindri_penpot_api_up $api_up
+sindri_penpot_api_duration_seconds $duration
+sindri_penpot_database_up $database_up
+sindri_health_last_run_timestamp_seconds $(date +%s)
+EOF
+chmod 0644 "$metrics"
+mv "$metrics" /var/lib/prometheus/node-exporter/sindri-health.prom

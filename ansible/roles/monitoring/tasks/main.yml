@@ -110,7 +110,11 @@
   ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: /opt/monitoring/docker-compose.yml
-    mode: "0644"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
   notify: Restart monitoring stack
 
 - name: Write Loki config
@@ -159,6 +163,17 @@
   ansible.builtin.template:
     src: grafana/provisioning/alerting/contactpoints.yml.j2
     dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
+    owner: root
+    group: root
+    mode: "0640"
+  no_log: true
+  diff: false
+  notify: Restart monitoring stack
+
+- name: Install compact Discord notification templates
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/templates.yml
+    dest: /opt/monitoring/grafana/provisioning/alerting/templates.yml
     mode: "0644"
   notify: Restart monitoring stack
 
@@ -168,6 +183,35 @@
     dest: /opt/monitoring/grafana/provisioning/alerting/rules.yml
     mode: "0644"
   notify: Restart monitoring stack
+
+- name: Write Proxmox disk and resource alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/proxmox.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/proxmox.yml
+    mode: "0644"
+  when: proxmox_ip is defined
+  notify: Restart monitoring stack
+
+- name: Write Sindri storage and Penpot alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/sindri.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/sindri.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Route Grafana alerts to the Discord contact point
+  ansible.builtin.copy:
+    src: grafana/provisioning/alerting/policies.yml
+    dest: /opt/monitoring/grafana/provisioning/alerting/policies.yml
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Install the Proxmox health dashboard
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/proxmox-dashboard.json
+    dest: /opt/monitoring/grafana/provisioning/dashboards/proxmox-dashboard.json
+    mode: "0644"
+  when: proxmox_ip is defined
 
 # ── Start stack ────────────────────────────────────────────────────────────────
 - name: Start monitoring stack

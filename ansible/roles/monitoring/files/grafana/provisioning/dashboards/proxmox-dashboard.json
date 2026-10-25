@@ -1,0 +1,294 @@
+{
+  "uid": "proxmox-health",
+  "title": "Proxmox health",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["proxmox", "storage"],
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "CPU usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"proxmox\",mode=\"idle\"}[5m])))",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Memory usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"proxmox\"} / node_memory_MemTotal_bytes{job=\"proxmox\"})",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "SATA disks online",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "homelab_disk_online{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "SATA temperature",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "homelab_disk_temperature_celsius{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Storage pools online",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "homelab_storage_active{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Storage usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "homelab_storage_used_percent{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Thin pool metadata usage",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "homelab_thin_pool_metadata_percent{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "New kernel storage errors",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(homelab_storage_kernel_errors_total{job=\"proxmox\"}[15m])",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Disk IO pressure",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(node_pressure_io_waiting_seconds_total{job=\"proxmox\"}[5m])",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "SATA check age",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - homelab_health_last_run_timestamp_seconds{job=\"proxmox\"}",
+          "legendFormat": "{{disk}}{{storage}}{{pool}}"
+        }
+      ]
+    }
+  ]
+}

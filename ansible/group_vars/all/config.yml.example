@@ -2,9 +2,12 @@
 # config.yml is committed vault-encrypted; this example documents every variable.
 # ── Nodes ─────────────────────────────────────────────────────────────────────
 ingress_ip: "1.2.3.4" # ingress node (VPS) public internet IP (also its Ansible address)
-edge_ip: "192.168.1.x" # edge node LAN IP (Caddy admin bind + firewall)
+edge_ip: "192.168.1.x" # edge node LAN IP (Caddy metrics bind + firewall)
 monitoring_ip: "192.168.1.x" # monitoring node LAN IP (Prometheus scrape source)
 tools_ip: "192.168.1.x" # tools VM LAN IP (Penpot bind address)
+proxmox_ip: "192.168.1.x" # Proxmox metrics endpoint; root SSH for the scoped monitoring play
+proxmox_expected_disks:
+  - /dev/disk/by-id/ata-MODEL_SERIAL # enumerate every expected SATA drive, even if currently offline
 mikrotik_ip: "192.168.1.1" # router LAN IP (RouterOS SSH)
 wireguard_lan_cidr: "192.168.1.0/24" # home LAN reachable by personal WireGuard clients through the edge node
 
@@ -58,7 +61,7 @@ glitchtip_enable_openapi: false
 # ── Image versions (pinned — change intentionally to upgrade) ──────────────────
 loki_image: "grafana/loki:3.1.0"
 prometheus_image: "prom/prometheus:v2.53.0"
-grafana_image: "grafana/grafana:11.1.0"
+grafana_image: "grafana/grafana:13.2.4"
 glitchtip_image: "glitchtip/glitchtip:6.2.0"
 glitchtip_postgres_image: "postgres:18.4"
 glitchtip_valkey_image: "valkey/valkey:9.0.4"

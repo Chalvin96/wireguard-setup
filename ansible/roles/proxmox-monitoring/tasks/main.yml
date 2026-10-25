@@ -1,0 +1,82 @@
+---
+- name: Require an explicit inventory of physical disks
+  ansible.builtin.assert:
+    that: proxmox_expected_disks | length > 0
+    fail_msg: Set proxmox_expected_disks to stable /dev/disk/by-id paths before deploying.
+
+- name: Install host metrics and disk health tools
+  ansible.builtin.apt:
+    name: [prometheus-node-exporter, smartmontools, cron]
+    state: present
+    install_recommends: false
+
+- name: Create metrics and private health state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/lib/prometheus/node-exporter, mode: "0755" }
+    - { path: /var/lib/proxmox-health, mode: "0700" }
+    - path: /etc/systemd/system/prometheus-node-exporter.service.d
+      mode: "0755"
+
+- name: Bind host metrics to the LAN and enable health textfiles
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus-node-exporter
+    content: 'ARGS="--web.listen-address={{ proxmox_ip }}:9100 --collector.textfile.directory=/var/lib/prometheus/node-exporter"'
+    mode: "0644"
+  notify: Restart Proxmox exporter
+
+- name: Restrict metrics connections to the monitoring VM and this host
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/access.conf
+    content: |
+      [Service]
+      IPAddressDeny=any
+      IPAddressAllow=localhost
+      IPAddressAllow={{ proxmox_ip }}
+      IPAddressAllow={{ monitoring_ip }}
+    mode: "0644"
+  notify: Restart Proxmox exporter
+
+- name: Install the independent disk health check
+  ansible.builtin.copy:
+    src: proxmox-health.py
+    dest: /usr/local/sbin/proxmox-health
+    mode: "0750"
+
+- name: Configure expected disks and private Discord webhook
+  ansible.builtin.copy:
+    dest: /etc/proxmox-health.json
+    content: >-
+      {{ {'disks': proxmox_expected_disks,
+          'storages': proxmox_expected_storages,
+          'temperature_limit': proxmox_disk_temperature_limit,
+          'webhook': vault_grafana_discord_webhook} | to_nice_json }}
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Schedule independent SATA and storage checks every five minutes
+  ansible.builtin.cron:
+    name: Proxmox SATA and storage health
+    cron_file: proxmox-health
+    user: root
+    minute: "*/5"
+    job: /usr/local/sbin/proxmox-health 2>&1 | /usr/bin/logger -t proxmox-health
+
+- name: Enable the metrics exporter and cron
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: [prometheus-node-exporter, cron]
+
+- name: Load exporter configuration before checking metrics
+  ansible.builtin.meta: flush_handlers
+
+- name: Collect initial disk health metrics
+  ansible.builtin.command: /usr/local/sbin/proxmox-health
+  changed_when: false

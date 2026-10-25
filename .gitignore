@@ -14,3 +14,6 @@ infra/proxmox/*.tfvars
 infra/proxmox/*.tfvars.json
 infra/proxmox/*.tfplan
 infra/proxmox/crash*.log
+
+# Python runtime artifacts
+__pycache__/

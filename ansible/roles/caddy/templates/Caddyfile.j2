@@ -1,7 +1,7 @@
 # Managed by Ansible — do not edit manually
 # Site blocks go in /etc/caddy/conf.d/*.caddy
 {
-    admin {{ edge_ip }}:2019
+    admin 127.0.0.1:2019
     metrics
     acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 
@@ -14,6 +14,14 @@
             }
             tls
         }
+    }
+}
+
+http://{{ edge_ip }}:2019 {
+    bind {{ edge_ip }}
+    route {
+        metrics /metrics
+        respond 404
     }
 }
 

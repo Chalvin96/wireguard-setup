@@ -29,6 +29,11 @@
     database: passwd
     key: "{{ github_runner_user }}"
 
+- name: Check for a legacy CI prune timer
+  ansible.builtin.stat:
+    path: "{{ github_runner_home }}/.config/systemd/user/docker-prune.timer"
+  register: ci_legacy_prune_timer
+
 - name: Disable the superseded weekly CI prune timer
   ansible.builtin.systemd:
     name: docker-prune.timer
@@ -40,7 +45,9 @@
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[github_runner_user][1] }}"
     DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts.getent_passwd[github_runner_user][1] }}/bus"
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - ci_legacy_prune_timer.stat.exists
 
 - name: Enable cron
   ansible.builtin.systemd:

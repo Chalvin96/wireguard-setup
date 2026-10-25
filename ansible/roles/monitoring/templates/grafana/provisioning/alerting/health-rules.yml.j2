@@ -1,11 +1,11 @@
 apiVersion: 1
 groups:
   - orgId: 1
-    name: proxmox-health
+    name: {{ health_alert_group }}
     folder: Homelab
     interval: 1m
     rules:
-{% for alert in monitoring_proxmox_alerts %}
+{% for alert in health_alerts %}
       - uid: {{ alert.uid }}
         title: {{ alert.title | to_json }}
         condition: C
@@ -30,9 +30,9 @@ groups:
             datasourceUid: __expr__
             model:
               type: math
-              expression: "$B > {{ alert.threshold }}"
+              expression: "$B {{ alert.operator | default('>') }} {{ alert.threshold }}"
               refId: C
-        noDataState: {{ alert.no_data | default('OK') }}
+        noDataState: {{ alert.no_data | default(health_alert_no_data) }}
         execErrState: Error
         for: {{ alert.duration }}
         annotations:
@@ -40,7 +40,9 @@ groups:
           measurement: {{ ('{{ with $values.A }}' ~ alert.measurement ~ '{{ end }}') | to_json }}
           description: {{ alert.action | to_json }}
         labels:
-          service: proxmox
+{% for key, value in health_alert_labels.items() %}
+          {{ key }}: {{ value }}
+{% endfor %}
           severity: {{ alert.severity }}
         isPaused: false
 {% endfor %}

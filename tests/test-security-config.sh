@@ -13,14 +13,13 @@ for path, destinations in (
     (roles / 'caddy/tasks/main.yml', {'/etc/caddy/cloudflare.env': '0600'}),
     (roles / 'monitoring/tasks/main.yml', {
         '/opt/monitoring/docker-compose.yml': '0600',
-        '/opt/monitoring/grafana/provisioning/alerting/contactpoints.yml': '0640',
     }),
-    (Path('ansible/notifications.yml'), {
+    (roles / 'monitoring/tasks/alerting.yml', {
         '/opt/monitoring/grafana/provisioning/alerting/contactpoints.yml': '0640',
     }),
 ):
     document = yaml.safe_load(path.read_text())
-    tasks = document[0]['tasks'] if path.name == 'notifications.yml' else document
+    tasks = document
     found = set()
     for task in tasks:
         template = task.get('ansible.builtin.template', {})

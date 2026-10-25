@@ -145,3 +145,126 @@ monitoring_proxmox_alerts:
     threshold: 90
     duration: 10m
     severity: warning
+
+monitoring_sindri_alerts:
+  - uid: sindri-storage-warning
+    title: Sindri data disk exceeds 90 GB
+    threshold: 90
+    duration: 10m
+    severity: warning
+    measurement:
+      !unsafe 'Used: {{ printf "%.1f" $values.A.Value }} GB (warning above
+      90 GB).'
+    action: Check CI cleanup status and retained build data.
+    expression:
+      (node_filesystem_size_bytes{job="sindri",mountpoint="/srv"} - node_filesystem_free_bytes{job="sindri",mountpoint="/srv"})
+      / 1000000000
+  - uid: sindri-storage-critical
+    title: Sindri data disk exceeds 100 GB
+    threshold: 100
+    duration: 5m
+    severity: critical
+    measurement:
+      !unsafe 'Used: {{ printf "%.1f" $values.A.Value }} GB (critical above
+      100 GB).'
+    action: Check CI cleanup and remove disposable build data.
+    expression:
+      (node_filesystem_size_bytes{job="sindri",mountpoint="/srv"} - node_filesystem_free_bytes{job="sindri",mountpoint="/srv"})
+      / 1000000000
+  - uid: sindri-storage-free
+    title: Sindri data disk has less than 20 GiB available
+    threshold: 20
+    duration: 5m
+    severity: critical
+    measurement:
+      !unsafe 'Available: {{ printf "%.1f" $values.A.Value }} GiB (minimum
+      20 GiB).'
+    action: Free disposable CI storage before applications run out of space.
+    operator: <
+    expression: node_filesystem_avail_bytes{job="sindri",mountpoint="/srv"} / 1073741824
+  - uid: sindri-storage-inodes
+    title: Sindri data disk inode usage exceeds 85 percent
+    threshold: 85
+    duration: 5m
+    severity: warning
+    measurement:
+      !unsafe 'Inodes used: {{ printf "%.1f" $values.A.Value }}% (warning
+      above 85%).'
+    action: Check retained workspaces and files created by builds.
+    expression:
+      100 * (1 - node_filesystem_files_free{job="sindri",mountpoint="/srv"}
+      / node_filesystem_files{job="sindri",mountpoint="/srv"})
+  - uid: sindri-exporter-down
+    title: Sindri host metrics unavailable
+    threshold: 0
+    duration: 3m
+    severity: critical
+    measurement: !unsafe ""
+    action: Check the node and its metrics exporter.
+    expression: 1 - up{job="sindri"}
+  - uid: sindri-io-pressure
+    title: Sindri sustained disk IO pressure
+    threshold: 20
+    duration: 10m
+    severity: warning
+    measurement:
+      !unsafe 'I/O stall time: {{ printf "%.1f" $values.A.Value }}% (warning
+      above 20%).'
+    action: Check disk latency and competing workloads.
+    expression: 100 * rate(node_pressure_io_waiting_seconds_total{job="sindri"}[5m])
+  - uid: sindri-penpot-api
+    title: Sindri Penpot API probe failed
+    threshold: 0
+    duration: 2m
+    severity: critical
+    measurement: !unsafe ""
+    action: Check Penpot frontend, backend and database health.
+    expression: 1 - sindri_penpot_api_up{job="sindri"}
+  - uid: sindri-penpot-latency
+    title: Sindri Penpot API slower than two seconds
+    threshold: 2
+    duration: 5m
+    severity: warning
+    measurement:
+      !unsafe 'API response: {{ printf "%.2f" $values.A.Value }} s (limit
+      2 s).'
+    action: Check Penpot database connections and host load.
+    expression: sindri_penpot_api_duration_seconds{job="sindri"}
+  - uid: sindri-penpot-database
+    title: Sindri Penpot database query failed
+    threshold: 0
+    duration: 1m
+    severity: critical
+    measurement: !unsafe ""
+    action: Check PostgreSQL health and available storage.
+    expression: 1 - sindri_penpot_database_up{job="sindri"}
+  - uid: sindri-cleanup-failed
+    no_data: OK
+    title: Sindri CI cleanup failed
+    threshold: 0
+    duration: 1m
+    severity: warning
+    measurement: !unsafe ""
+    action: Check the ci-cleanup journal for the failed command.
+    expression: 1 - ci_cleanup_success{job="sindri"}
+  - uid: sindri-cleanup-stale
+    no_data: OK
+    title: Sindri CI cleanup overdue
+    threshold: 21600
+    duration: 15m
+    severity: warning
+    measurement:
+      !unsafe "Last cleanup attempt: {{ humanizeDuration $values.A.Value
+      }} ago (limit 6 h)."
+    action: Check cron, active CI jobs and the ci-cleanup journal.
+    expression: time() - ci_cleanup_last_run_timestamp_seconds{job="sindri"}
+  - uid: sindri-health-stale
+    title: Sindri Penpot health collector overdue
+    threshold: 180
+    duration: 2m
+    severity: critical
+    measurement:
+      !unsafe "Last probe: {{ humanizeDuration $values.A.Value }} ago (limit
+      3 min)."
+    action: Check the Penpot health collector timer.
+    expression: time() - sindri_health_last_run_timestamp_seconds{job="sindri"}

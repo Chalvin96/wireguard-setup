@@ -11,6 +11,9 @@ PostgreSQL probes on tools-01. Node Exporter publishes their status and response
 time, and Prometheus collects them through the existing `sindri` scrape job.
 Grafana on monitoring-01 routes alerts through its existing Discord contact point.
 
+Alert data is defined in `ansible/roles/monitoring/defaults/main.yml`, and both
+health groups use the shared `health-rules.yml.j2` renderer.
+
 Alerts cover data-disk usage above 90/100 GB, less than 20 GiB available, inode
 exhaustion, missing host metrics, sustained I/O pressure, failed or slow Penpot
 requests, failed SQL queries, and stale probe samples. Adjust capacity thresholds

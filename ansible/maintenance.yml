@@ -20,29 +20,8 @@
 - name: Apply storage budgets and swap pressure alerts
   hosts: monitoring
   become: true
-  vars_files:
-    - roles/monitoring/defaults/main.yml
   tasks:
-    - name: Install updated resource alerts
-      ansible.builtin.template:
-        src: "roles/monitoring/templates/grafana/provisioning/alerting/{{ item }}.yml.j2"
-        dest: "/opt/monitoring/grafana/provisioning/alerting/{{ item }}.yml"
-        mode: "0644"
-      loop: [sindri, proxmox]
-      register: maintenance_alerts
-
-    - name: Reload Grafana alert provisioning
-      ansible.builtin.command:
-        argv:
-          - docker
-          - exec
-          - monitoring-grafana-1
-          - sh
-          - -c
-          - >-
-            curl --fail --silent --show-error --max-time 60
-            --user "$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD"
-            --request POST http://localhost:3000/api/admin/provisioning/alerting/reload
-      when: maintenance_alerts.changed and not ansible_check_mode
-      changed_when: true
-      no_log: true
+    - name: Apply shared alert provisioning
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: alerting

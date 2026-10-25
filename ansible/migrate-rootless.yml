@@ -91,7 +91,6 @@
         - name: Load migration account IDs
           ansible.builtin.set_fact:
             rootless_apps_uid: "{{ getent_passwd[docker_apps_user][1] }}"
-            rootless_ci_uid: "{{ getent_passwd[github_runner_user][1] }}"
 
         - name: Transfer the existing Penpot images to applications Docker
           ansible.builtin.shell: |

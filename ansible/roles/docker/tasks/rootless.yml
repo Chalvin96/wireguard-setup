@@ -199,7 +199,7 @@
     label: "{{ item.name }}"
   when: not ansible_check_mode
 
-- name: Write per-daemon prune services and timers
+- name: Write application prune service and timer
   ansible.builtin.template:
     src: "{{ item.1 }}.j2"
     dest: "{{ item.0.home }}/.config/systemd/user/{{ item.1 }}"
@@ -208,11 +208,11 @@
     mode: "0644"
   vars:
     docker_prune_uid: "{{ getent_passwd[item.0.name][1] }}"
-  loop: "{{ docker_rootless_accounts | product(['docker-prune.service', 'docker-prune.timer']) | list }}"
+  loop: "{{ docker_rootless_accounts | selectattr('name', 'equalto', docker_apps_user) | product(['docker-prune.service', 'docker-prune.timer']) | list }}"
   loop_control:
     label: "{{ item.0.name }} {{ item.1 }}"
 
-- name: Start rootless daemons and prune timers
+- name: Start rootless daemons and the application prune timer
   ansible.builtin.systemd:
     scope: user
     name: "{{ item.1 }}"
@@ -224,7 +224,10 @@
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.0.name][1] }}"
     DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.0.name][1] }}/bus"
-  loop: "{{ docker_rootless_accounts | product(['docker.service', 'docker-prune.timer']) | list }}"
+  loop: >-
+    {{ (docker_rootless_accounts | product(['docker.service']) | list)
+       + (docker_rootless_accounts | selectattr('name', 'equalto', docker_apps_user)
+          | product(['docker-prune.timer']) | list) }}
   loop_control:
     label: "{{ item.0.name }} {{ item.1 }}"
   when: not ansible_check_mode

@@ -303,6 +303,13 @@ including router, hypervisor, SSH and monitoring administration, are denied.
 See [application network isolation](docs/app-isolation.md) for allowed services,
 deployment and verification.
 
+## SSH access roles
+
+Routine agent debugging should use a dedicated diagnostic key with predefined
+commands. Deployment and administrator keys remain separate. See the
+[SSH access proposal](docs/access-roles-plan.md) for the permission boundaries and
+rollout plan; it does not change current access.
+
 ## Contributor setup
 
 Use Node.js 22 and `uv` on the control machine. Install the local Git hooks once:

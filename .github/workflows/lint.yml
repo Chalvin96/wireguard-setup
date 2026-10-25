@@ -31,8 +31,10 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Check secret handling
-        run: bash tests/test-security-config.sh
+      - name: Check secret handling and monitoring alerts
+        run: |
+          bash tests/test-security-config.sh
+          bash tests/test-monitoring-alerts.sh
 
       - name: Check application network isolation
         run: |

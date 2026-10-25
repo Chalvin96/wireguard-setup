@@ -1,50 +1,7 @@
 ---
-- name: Install Docker dependencies
-  ansible.builtin.apt:
-    name:
-      - ca-certificates
-      - curl
-      - gnupg
-    state: present
-    update_cache: true
-
-- name: Ensure apt keyrings directory
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: "0755"
-
-- name: Download Docker GPG key
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    mode: "0644"
-
-- name: Determine dpkg architecture
-  ansible.builtin.command: dpkg --print-architecture
-  register: monitoring_dpkg_arch
-  changed_when: false
-
-- name: Add Docker apt repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch={{ monitoring_dpkg_arch.stdout }}
-      signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/{{ ansible_distribution | lower }}
-      {{ ansible_distribution_release }} stable
-    filename: docker
-    state: present
-    update_cache: true
-
-- name: Install Docker CE and Compose plugin
-  ansible.builtin.apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-compose-plugin
-    state: present
-    update_cache: true
+- name: Install Docker engine
+  ansible.builtin.import_role:
+    name: docker-engine
 
 - name: Enable Docker
   ansible.builtin.systemd:
@@ -154,52 +111,8 @@
     dest: /opt/monitoring/grafana/provisioning/dashboards/tools-dashboard.json
     mode: "0644"
 
-- name: Write Grafana contact point (Discord webhook from vault)
-  ansible.builtin.template:
-    src: grafana/provisioning/alerting/contactpoints.yml.j2
-    dest: /opt/monitoring/grafana/provisioning/alerting/contactpoints.yml
-    owner: root
-    group: root
-    mode: "0640"
-  no_log: true
-  diff: false
-  notify: Restart monitoring stack
-
-- name: Install compact Discord notification templates
-  ansible.builtin.copy:
-    src: grafana/provisioning/alerting/templates.yml
-    dest: /opt/monitoring/grafana/provisioning/alerting/templates.yml
-    mode: "0644"
-  notify: Restart monitoring stack
-
-- name: Write Grafana alert rules
-  ansible.builtin.template:
-    src: grafana/provisioning/alerting/rules.yml.j2
-    dest: /opt/monitoring/grafana/provisioning/alerting/rules.yml
-    mode: "0644"
-  notify: Restart monitoring stack
-
-- name: Write Proxmox disk and resource alert rules
-  ansible.builtin.template:
-    src: grafana/provisioning/alerting/proxmox.yml.j2
-    dest: /opt/monitoring/grafana/provisioning/alerting/proxmox.yml
-    mode: "0644"
-  when: proxmox_ip is defined
-  notify: Restart monitoring stack
-
-- name: Write Sindri storage and Penpot alert rules
-  ansible.builtin.template:
-    src: grafana/provisioning/alerting/sindri.yml.j2
-    dest: /opt/monitoring/grafana/provisioning/alerting/sindri.yml
-    mode: "0644"
-  notify: Restart monitoring stack
-
-- name: Route Grafana alerts to the Discord contact point
-  ansible.builtin.copy:
-    src: grafana/provisioning/alerting/policies.yml
-    dest: /opt/monitoring/grafana/provisioning/alerting/policies.yml
-    mode: "0644"
-  notify: Restart monitoring stack
+- name: Configure Grafana alerts and notifications
+  ansible.builtin.import_tasks: alerting.yml
 
 - name: Install the Proxmox health dashboard
   ansible.builtin.copy:

@@ -1,4 +1,0 @@
-{{ glitchtip_domain | regex_replace('^https?://', '') }} {
-    import access_log
-    reverse_proxy {{ monitoring_ip }}:{{ glitchtip_port }}
-}

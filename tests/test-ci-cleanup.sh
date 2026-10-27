@@ -14,6 +14,7 @@ environment = Environment(trim_blocks=True)
 environment.filters['quote'] = shlex.quote
 source = (root / 'ansible/roles/ci-maintenance/templates/ci-cleanup.sh.j2').read_text()
 source = source.replace('/run/lock/ci-cleanup.lock', str(temporary / 'lock'))
+source = source.replace('"/run/user/$ci_uid/dockerd-rootless/child_pid"', '"' + str(temporary / 'child_pid') + '"')
 source = source.replace('/var/lib/prometheus/node-exporter', str(temporary / 'metrics'))
 (temporary / 'cleanup').write_text(environment.from_string(source).render(
     github_runner_instances=[
@@ -47,9 +48,18 @@ cat > "$temporary/bin/df" <<'EOF'
 #!/bin/bash
 echo "${USED_BYTES:-10000000000}"
 EOF
+echo 4242 > "$temporary/child_pid"
+cat > "$temporary/bin/nsenter" <<'EOF'
+#!/bin/bash
+echo "nsenter $*" >> "$CALLS"
+while [[ "$1" != -t ]]; do shift; done
+shift 2
+exec "$@"
+EOF
 cat > "$temporary/bin/runuser" <<'EOF'
 #!/bin/bash
 echo "runuser $*" >> "$CALLS"
+case "$*" in *' -- nsenter '*) shift 3; exec "$@" ;; esac
 if [[ "${DOCKER_FAIL:-0}" == 1 ]]; then exit 17; fi
 case "$*" in
     *'volume ls '*) printf 'buildx_buildkit_old_state\nkeep-named-data\n' ;;
@@ -118,5 +128,6 @@ grep -q 'buildx prune --builder persistent --force --max-used-space 5GB$' "$CALL
 test "$(grep -c 'buildx prune --builder persistent ' "$CALLS")" -eq 3
 grep -q '^systemctl thaw ' "$CALLS"
 grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
-! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- docker --host unix:///run/user/(999|998|997)/docker.sock'
+! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
+grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
 echo 'PASS: per-instance daemons, busy/error skips, failure thaw, scoped cache pruning, age-based retention and cleanup metrics.'

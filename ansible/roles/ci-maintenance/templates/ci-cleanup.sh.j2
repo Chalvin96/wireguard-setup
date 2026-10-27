@@ -40,6 +40,15 @@ run_ci_docker() {
     runuser -u "$ci_user" -- docker --host "unix:///run/user/$ci_uid/docker.sock" "$@"
 }
 
+# Filesystem cleanup runs inside the daemon's user namespace as the runner user:
+# it can remove files owned by container sub-UIDs but cannot follow a symlink
+# swapped in by a surviving container to anything outside that account's data.
+run_ci_ns() {
+    local pid
+    pid=$(cat "/run/user/$ci_uid/dockerd-rootless/child_pid")
+    runuser -u "$ci_user" -- nsenter -U --preserve-credentials -t "$pid" "$@"
+}
+
 select_account() {
     IFS=: read -r ci_user ci_home ci_name <<< "$1"
     ci_uid=$(id -u "$ci_user")
@@ -90,15 +99,15 @@ for account in "${ci_accounts[@]}"; do
     )
     for dir in "${cache_dirs[@]}"; do
         [[ -d "$dir" ]] || continue
-        find "$dir" -xdev -mindepth 1 \( -type f -atime "+$retention" -o -type d -empty \) -delete
+        run_ci_ns find "$dir" -xdev -mindepth 1 \( -type f -atime "+$retention" -o -type d -empty \) -delete
     done
     work="$ci_home/$ci_name/_work"
     if [[ -d "$work" ]]; then
-        find "$work" -xdev -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' \
+        run_ci_ns find "$work" -xdev -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' \
             -mtime "+$retention" -exec rm -rf --one-file-system -- {} +
     fi
     if [[ -d "$ci_home/_tool" ]]; then
-        find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' -mtime "+$retention" \
+        run_ci_ns find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' -mtime "+$retention" \
             -exec rm -rf --one-file-system -- {} +
     fi
 done

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 export PATH="${PATH:-/usr/bin:/bin}:/usr/sbin:/sbin"
+# Commands run as runner users must be able to return to the working directory.
+cd /
 
 # Every runner instance has its own account (user:home:name) and Docker daemon.
 ci_accounts=(

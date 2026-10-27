@@ -119,10 +119,11 @@ and token-bearing connection URL out of this public repository and logs.
 
 ## Boundaries and CI compatibility
 
-The combined CI user slice limits both runner instances, their direct child
-processes, and CI's rootless daemon/containers (`docker_ci_cpu_quota`,
-`docker_ci_memory_max`). Per-runner limits still apply. Verify the live cgroup
-limits: container-only flags are insufficient to reserve capacity for apps.
+Every runner instance has its own account, rootless daemon and user slice
+(`docker_ci_cpu_quota`, `docker_ci_memory_max` apply per instance), covering the
+runner, its child processes and its containers. Per-runner limits still apply.
+Verify the live cgroup limits: container-only flags are insufficient to reserve
+capacity for apps.
 
 This isolates Docker management and file permissions, not the shared kernel,
 disk capacity, or LAN. CI can still contact published application endpoints.
@@ -133,7 +134,7 @@ Persistent runner workspaces remain persistent. This migration does not implemen
 ephemeral runners or guaranteed cancellation cleanup. Use unique Compose project
 names and scope cleanup to each job's disposable resources.
 
-Both runner services use one `RUNNER_TOOL_CACHE` on the data disk. The runner role seeds
+Each runner instance has its own `RUNNER_TOOL_CACHE` under its home. The runner role seeds
 the configured Node versions from `nodejs.org`, verifies the official SHA-256
 checksums and executables, and writes the completion markers expected by
 `actions/setup-node`. Existing workflows requesting those versions can use the
@@ -146,11 +147,30 @@ listener and direct job processes instead of leaving orphan workers accepting
 more jobs. Docker-created containers are separate processes: this is not a
 replacement for scoped container cleanup.
 
-Docker 29.5+ supports real host networking in rootless mode. Older versions
-namespace `--network host` inside RootlessKit. Still
-validate Playwright, Compose integration tests, and container jobs before assuming
-every existing workflow is compatible. Host ports are shared across both daemons
-and both repository runners, so avoid assuming fixed ports are globally free.
+## Runner isolation
+
+A repository can run several runners in parallel (`instances: N` on its
+`github_runner_repos` entry in the private config). Each instance gets its own
+account, rootless daemon, image store and Docker config, and its runner unit
+joins that daemon's network namespace (`actions-runner-exec`). The daemons
+disable RootlessKit host port forwarding, so ports published by one job
+(`localhost:5432`, fixed test ports) exist only inside that runner's namespace
+and concurrent jobs cannot collide on ports, networks, compose projects or
+registry logins. The runner still runs as its unprivileged account: the unit
+grants `CAP_SYS_ADMIN` only to join the namespace and the wrapper drops it before
+the runner starts. After a daemon restart the runner must be restarted to join
+the new namespace (the role's handler does this).
+
+Job containers mount `/var/run/docker.sock`. The host's compatibility symlink for
+that path belongs to a single account, so each CI daemon re-points it to its own
+socket inside its mount namespace (`ci-docker-sock-link`, run after the daemon
+starts). Without it, other instances' container jobs fail to start, or would
+reach another runner's daemon.
+
+Layers and build cache are per daemon, so each instance pulls and stores its own
+images; budget disk accordingly. Validate Playwright, Compose integration tests
+and container jobs against the isolated network before assuming every
+workflow is compatible.
 
 ## Verification
 

@@ -1,0 +1,30 @@
+# Managed by Ansible — runner instance {{ item.name }}
+[Unit]
+Description=GitHub Actions runner ({{ item.name }})
+Wants=network-online.target
+Requires=user@{{ getent_passwd[item.user][1] }}.service
+After=network-online.target user@{{ getent_passwd[item.user][1] }}.service
+
+[Service]
+User={{ item.user }}
+Slice=user-{{ getent_passwd[item.user][1] }}.slice
+Environment=DOCKER_HOST=unix:///run/user/{{ getent_passwd[item.user][1] }}/docker.sock
+Environment=RUNNER_TOOL_CACHE={{ item.home }}/_tool
+# Joining the daemon's network namespace needs CAP_SYS_ADMIN once; the wrapper
+# drops it again before the runner starts.
+AmbientCapabilities=CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN
+ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until docker info >/dev/null 2>&1 && test -s /run/user/{{ getent_passwd[item.user][1] }}/dockerd-rootless/child_pid; do sleep 1; done'
+WorkingDirectory={{ item.home }}/{{ item.name }}
+ExecStart=/usr/local/sbin/actions-runner-exec {{ getent_passwd[item.user][1] }} {{ item.home }}/{{ item.name }}
+Restart=always
+RestartSec=10
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+# The instance's user slice also caps its runner and CI containers together.
+CPUQuota={{ github_runner_cpu_quota }}
+MemoryMax={{ github_runner_memory_max }}
+
+[Install]
+WantedBy=multi-user.target

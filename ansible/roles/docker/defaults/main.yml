@@ -3,14 +3,16 @@ docker_apps_user: apps
 docker_apps_home: /var/lib/apps
 docker_apps_subuid: 231072
 docker_ci_subuid: 296608
-docker_ci_cpu_quota: "300%"
-docker_ci_memory_max: "8G"
+docker_ci_cpu_quota: "300%" # per runner instance
+docker_ci_memory_max: "6G" # per runner instance
 # Only the explicit migration playbook may leave the old daemon running.
 docker_rootless_migration: false
-docker_rootless_accounts:
-  - name: "{{ docker_apps_user }}"
-    home: "{{ docker_apps_home }}"
-    subuid: "{{ docker_apps_subuid }}"
-  - name: "{{ github_runner_user }}"
-    home: "{{ github_runner_home }}"
-    subuid: "{{ docker_ci_subuid }}"
+# Applications daemon plus one CI daemon per runner instance (`ci` marks them).
+docker_rootless_accounts: >-
+  {%- set out = [
+        {'name': docker_apps_user, 'home': docker_apps_home, 'subuid': docker_apps_subuid},
+        {'name': github_runner_user, 'home': github_runner_home, 'subuid': docker_ci_subuid, 'ci': true}] -%}
+  {%- for instance in github_runner_instances | default([]) if instance.user != github_runner_user -%}
+  {%- set _ = out.append({'name': instance.user, 'home': instance.home, 'subuid': instance.subuid, 'ci': true}) -%}
+  {%- endfor -%}
+  {{ out }}

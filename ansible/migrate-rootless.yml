@@ -22,11 +22,11 @@
 
     - name: Record original runner service state
       ansible.builtin.systemd:
-        name: "actions-runner@{{ item.repo }}"
+        name: "actions-runner@{{ item.name | default(item.repo) }}"
       register: rootless_runner_state
-      loop: "{{ github_runner_repos }}"
+      loop: "{{ github_runner_instances | default(github_runner_repos) }}"
       loop_control:
-        label: "{{ item.repo }}"
+        label: "{{ item.name | default(item.repo) }}"
 
     - name: Record the original runner Docker context
       ansible.builtin.command: docker context show
@@ -40,11 +40,11 @@
       block:
         - name: Pause idle runners before configuring their new daemon
           ansible.builtin.systemd:
-            name: "actions-runner@{{ item.repo }}"
+            name: "actions-runner@{{ item.name | default(item.repo) }}"
             state: stopped
-          loop: "{{ github_runner_repos }}"
+          loop: "{{ github_runner_instances | default(github_runner_repos) }}"
           loop_control:
-            label: "{{ item.repo }}"
+            label: "{{ item.name | default(item.repo) }}"
         - name: Configure rootless Docker for migration
           ansible.builtin.include_role:
             name: docker

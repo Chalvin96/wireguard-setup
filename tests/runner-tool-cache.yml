@@ -3,8 +3,9 @@
   hosts: all
   become: true
   vars:
-    github_runner_user: github-runner
-    github_runner_home: /var/lib/actions-runner
+    github_runner_instance:
+      user: github-runner
+      home: /var/lib/actions-runner
   vars_files:
     - ../ansible/roles/github-runner/defaults/main.yml
   tasks:
@@ -15,10 +16,10 @@
 
     - name: Create the distribution cache
       ansible.builtin.file:
-        path: "{{ github_runner_home }}/dist"
+        path: "{{ github_runner_instance.home }}/dist"
         state: directory
-        owner: "{{ github_runner_user }}"
-        group: "{{ github_runner_user }}"
+        owner: "{{ github_runner_instance.user }}"
+        group: "{{ github_runner_instance.user }}"
         mode: "0755"
 
     - name: Provision and verify setup-node compatible caches

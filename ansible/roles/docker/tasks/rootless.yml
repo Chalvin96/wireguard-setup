@@ -107,6 +107,47 @@
   loop: "{{ docker_rootless_accounts }}"
   loop_control:
     label: "{{ item.name }}"
+  register: docker_daemon_config
+  notify: Restart rootless daemons
+
+- name: Keep CI published ports inside each daemon's own network namespace
+  ansible.builtin.file:
+    path: "{{ item.home }}/.config/systemd/user/docker.service.d"
+    state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0700"
+  loop: "{{ docker_rootless_accounts | selectattr('ci', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install the CI Docker socket link helper
+  ansible.builtin.copy:
+    src: ci-docker-sock-link
+    dest: /usr/local/sbin/ci-docker-sock-link
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Disable host port forwarding for CI daemons
+  ansible.builtin.copy:
+    dest: "{{ item.home }}/.config/systemd/user/docker.service.d/ci-network.conf"
+    content: |
+      # Published ports stay in this daemon's namespace; runners join it, so
+      # concurrent runners can reuse the same ports without colliding.
+      # Detached netns would make `--network host` mean the real host network,
+      # which is not where the runner and its published ports live.
+      [Service]
+      Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=none
+      Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DETACH_NETNS=false
+      ExecStartPost=/usr/local/sbin/ci-docker-sock-link
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0600"
+  loop: "{{ docker_rootless_accounts | selectattr('ci', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: docker_ci_network
   notify: Restart rootless daemons
 
 - name: Create per-account cgroup delegation directories
@@ -133,21 +174,27 @@
     label: "{{ item.name }}"
   notify: Reload systemd
 
-- name: Create aggregate CI resource limit directory
+- name: Create CI resource limit directories
   ansible.builtin.file:
-    path: "/etc/systemd/system/user-{{ getent_passwd[github_runner_user][1] }}.slice.d"
+    path: "/etc/systemd/system/user-{{ getent_passwd[item.name][1] }}.slice.d"
     state: directory
     mode: "0755"
+  loop: "{{ docker_rootless_accounts | selectattr('ci', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
 
-- name: Limit CI processes and containers together
+- name: Limit each CI instance's processes and containers together
   ansible.builtin.copy:
-    dest: "/etc/systemd/system/user-{{ getent_passwd[github_runner_user][1] }}.slice.d/ci-limits.conf"
+    dest: "/etc/systemd/system/user-{{ getent_passwd[item.name][1] }}.slice.d/ci-limits.conf"
     content: |
       [Slice]
       CPUQuota={{ docker_ci_cpu_quota }}
       MemoryMax={{ docker_ci_memory_max }}
       TasksMax=4096
     mode: "0644"
+  loop: "{{ docker_rootless_accounts | selectattr('ci', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
   notify: Reload systemd
 
 - name: Load delegation configuration before starting user managers

@@ -1,8 +1,9 @@
 ---
-- name: Require unique repository names for runner instances
+- name: Require unique runner instance names
   ansible.builtin.assert:
     that:
       - github_runner_repos | map(attribute='repo') | list | unique | length == github_runner_repos | length
+      - github_runner_instances | map(attribute='name') | list | unique | length == github_runner_instances | length
     fail_msg: Runner directories and service instances require unique repository names, including across owners.
 
 - name: Install runner tooling and runtime dependencies
@@ -15,79 +16,92 @@
     state: present
     update_cache: true
 
-- name: Create runner user
+- name: Create runner users
   ansible.builtin.user:
-    name: "{{ github_runner_user }}"
-    home: "{{ github_runner_home }}"
+    name: "{{ item.user }}"
+    home: "{{ item.home }}"
     shell: /bin/bash
     groups: ""
     append: false
     system: true
     create_home: true
+    password_lock: true
+  loop: "{{ github_runner_instances }}"
+  loop_control:
+    label: "{{ item.user }}"
 
-- name: Read runner account ID
+- name: Read runner account IDs
   ansible.builtin.getent:
     database: passwd
-    key: "{{ github_runner_user }}"
 
-- name: Create runner download directory
+- name: Create runner download directories
   ansible.builtin.file:
-    path: "{{ github_runner_home }}/dist"
+    path: "{{ item.home }}/dist"
     state: directory
-    owner: "{{ github_runner_user }}"
-    group: "{{ github_runner_user }}"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
     mode: "0755"
+  loop: "{{ github_runner_instances }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Download pinned runner release (checksum verified)
   ansible.builtin.get_url:
     url: "https://github.com/actions/runner/releases/download/v{{ github_runner_version }}/actions-runner-linux-x64-{{ github_runner_version }}.tar.gz"
-    dest: "{{ github_runner_home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
+    dest: "{{ item.home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
     checksum: "sha256:{{ github_runner_sha256 }}"
-    owner: "{{ github_runner_user }}"
-    group: "{{ github_runner_user }}"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
     mode: "0644"
+  loop: "{{ github_runner_instances }}"
+  loop_control:
+    label: "{{ item.name }}"
 
-- name: Seed the shared tool cache to avoid repeated GitHub downloads
+- name: Seed each instance's tool cache to avoid repeated GitHub downloads
   ansible.builtin.include_tasks: tool-cache.yml
+  loop: "{{ github_runner_instances }}"
+  loop_control:
+    loop_var: github_runner_instance
+    label: "{{ github_runner_instance.name }}"
 
 - name: Create runner instance directories
   ansible.builtin.file:
-    path: "{{ github_runner_home }}/{{ item.repo }}"
+    path: "{{ item.home }}/{{ item.name }}"
     state: directory
-    owner: "{{ github_runner_user }}"
-    group: "{{ github_runner_user }}"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
     mode: "0750"
-  loop: "{{ github_runner_repos }}"
+  loop: "{{ github_runner_instances }}"
   loop_control:
-    label: "{{ item.owner }}/{{ item.repo }}"
+    label: "{{ item.name }}"
 
 - name: Unpack runner into each instance (first install only; runner self-updates)
   ansible.builtin.unarchive:
-    src: "{{ github_runner_home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
-    dest: "{{ github_runner_home }}/{{ item.repo }}"
+    src: "{{ item.home }}/dist/actions-runner-{{ github_runner_version }}.tar.gz"
+    dest: "{{ item.home }}/{{ item.name }}"
     remote_src: true
-    owner: "{{ github_runner_user }}"
-    group: "{{ github_runner_user }}"
-    creates: "{{ github_runner_home }}/{{ item.repo }}/config.sh"
-  loop: "{{ github_runner_repos }}"
+    owner: "{{ item.user }}"
+    group: "{{ item.user }}"
+    creates: "{{ item.home }}/{{ item.name }}/config.sh"
+  loop: "{{ github_runner_instances }}"
   loop_control:
-    label: "{{ item.owner }}/{{ item.repo }}"
+    label: "{{ item.name }}"
   when: not ansible_check_mode # unit/file is only created in a real run
 
 - name: Install runner OS dependencies
   ansible.builtin.command: ./bin/installdependencies.sh
   args:
-    chdir: "{{ github_runner_home }}/{{ github_runner_repos[0].repo }}"
+    chdir: "{{ github_runner_instances[0].home }}/{{ github_runner_instances[0].name }}"
   changed_when: false
-  when: github_runner_repos | length > 0
+  when: github_runner_instances | length > 0
 
 - name: Check which instances are already registered
   ansible.builtin.stat:
-    path: "{{ github_runner_home }}/{{ item.repo }}/.runner"
+    path: "{{ item.home }}/{{ item.name }}/.runner"
   register: github_runner_registered
-  loop: "{{ github_runner_repos }}"
+  loop: "{{ github_runner_instances }}"
   loop_control:
-    label: "{{ item.owner }}/{{ item.repo }}"
+    label: "{{ item.name }}"
 
 - name: Fetch registration token for unregistered instances
   ansible.builtin.uri:
@@ -101,7 +115,7 @@
   register: github_runner_tokens
   loop: "{{ github_runner_registered.results }}"
   loop_control:
-    label: "{{ item.item.owner }}/{{ item.item.repo }}"
+    label: "{{ item.item.name }}"
   when: not item.stat.exists
   no_log: true
 
@@ -114,42 +128,59 @@
       - --url
       - "https://github.com/{{ item.item.item.owner }}/{{ item.item.item.repo }}"
       - --name
-      - "{{ inventory_hostname }}-{{ item.item.item.repo }}"
+      - "{{ inventory_hostname }}-{{ item.item.item.name }}"
       - --labels
       - "{{ github_runner_labels | join(',') }}"
       - --work
       - _work
-    chdir: "{{ github_runner_home }}/{{ item.item.item.repo }}"
-    creates: "{{ github_runner_home }}/{{ item.item.item.repo }}/.runner"
+    chdir: "{{ item.item.item.home }}/{{ item.item.item.name }}"
+    creates: "{{ item.item.item.home }}/{{ item.item.item.name }}/.runner"
   # The runner reads ACTIONS_RUNNER_INPUT_<ARG>; keeping the token out of argv
   # keeps it out of /proc/*/cmdline for other local users.
   environment:
     ACTIONS_RUNNER_INPUT_TOKEN: "{{ item.json.token }}"
   become: true
-  become_user: "{{ github_runner_user }}"
+  become_user: "{{ item.item.item.user }}"
   loop: "{{ github_runner_tokens.results }}"
   loop_control:
-    label: "{{ item.item.item.owner | default('') }}/{{ item.item.item.repo | default('') }}"
+    label: "{{ item.item.item.name | default('') }}"
   when: item is not skipped
   no_log: true
 
-- name: Write templated runner unit
-  ansible.builtin.template:
-    src: actions-runner@.service.j2
-    dest: /etc/systemd/system/actions-runner@.service
-    mode: "0644"
-  notify: Reload systemd
-  register: github_runner_unit
+- name: Install the runner namespace wrapper
+  ansible.builtin.copy:
+    src: actions-runner-exec
+    dest: /usr/local/sbin/actions-runner-exec
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: Flush handlers so the unit is loaded
+- name: Remove the shared runner unit template (each instance has its own unit)
+  ansible.builtin.file:
+    path: /etc/systemd/system/actions-runner@.service
+    state: absent
+  notify: Reload systemd
+
+- name: Write runner units
+  ansible.builtin.template:
+    src: actions-runner.service.j2
+    dest: "/etc/systemd/system/actions-runner@{{ item.name }}.service"
+    mode: "0644"
+  loop: "{{ github_runner_instances }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd
+  register: github_runner_units
+
+- name: Flush handlers so the units are loaded
   ansible.builtin.meta: flush_handlers
 
 - name: Enable runner instances
   ansible.builtin.systemd:
-    name: "actions-runner@{{ item.repo }}"
+    name: "actions-runner@{{ item.item.name }}"
     enabled: true
-    state: "{{ 'restarted' if github_runner_unit.changed else 'started' }}"
-  loop: "{{ github_runner_repos }}"
+    state: "{{ 'restarted' if item.changed else 'started' }}"
+  loop: "{{ github_runner_units.results }}"
   loop_control:
-    label: "{{ item.owner }}/{{ item.repo }}"
+    label: "{{ item.item.name }}"
   when: not ansible_check_mode # unit/file is only created in a real run

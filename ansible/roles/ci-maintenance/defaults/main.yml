@@ -1,0 +1,4 @@
+---
+# Measured CI Docker build cache was 2.0 GB; allow room for growth per builder.
+ci_build_cache_budget: 5GB
+ci_cache_retention_days: 14

@@ -3,6 +3,7 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
+# Only daemons whose own configuration changed are restarted.
 - name: Restart rootless daemons
   ansible.builtin.systemd:
     scope: user
@@ -14,7 +15,21 @@
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.name][1] }}"
     DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.name][1] }}/bus"
-  loop: "{{ docker_rootless_accounts }}"
+  loop: >-
+    {{ ((docker_daemon_config.results | default([])) + (docker_ci_network.results | default([])))
+       | selectattr('changed') | map(attribute='item') | unique | list }}
   loop_control:
     label: "{{ item.name }}"
+  when: not ansible_check_mode
+  notify: Restart CI runners
+
+# A restarted daemon gets a new network namespace; runners must rejoin it.
+# try-restart leaves stopped runners stopped, which the systemd module cannot express.
+- name: Restart CI runners
+  ansible.builtin.command: "systemctl try-restart actions-runner@{{ item.name }}.service" # noqa: command-instead-of-module
+  loop: "{{ github_runner_instances | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  failed_when: false
   when: not ansible_check_mode

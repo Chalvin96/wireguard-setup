@@ -1,0 +1,11 @@
+#!/bin/sh
+# Managed by Ansible. Start a runner inside its Docker daemon's network
+# namespace as the unprivileged runner user.
+# usage: actions-runner-exec <uid> <runner-directory>
+set -eu
+pid=$(cat "/run/user/$1/dockerd-rootless/child_pid")
+cd "$2"
+# CAP_SYS_ADMIN (ambient, from the unit) is only needed to join the namespace;
+# drop it before the runner and its jobs start.
+exec /usr/bin/nsenter --net --target "$pid" \
+    /usr/bin/setpriv --ambient-caps=-all --inh-caps=-all "$2/run.sh"

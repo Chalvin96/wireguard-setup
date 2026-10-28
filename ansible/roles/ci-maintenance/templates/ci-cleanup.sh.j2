@@ -1,13 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 export PATH="${PATH:-/usr/bin:/bin}:/usr/sbin:/sbin"
+# Commands run as runner users must be able to return to the working directory.
+cd /
 
-ci_user={{ github_runner_user | quote }}
-ci_home={{ github_runner_home | quote }}
-ci_uid=$(id -u "$ci_user")
+# Every runner instance has its own account (user:home:name) and Docker daemon.
+ci_accounts=(
+{% for instance in github_runner_instances %}
+    {{ (instance.user ~ ':' ~ instance.home ~ ':' ~ instance.name) | quote }}
+{% endfor %}
+)
 runner_units=(
-{% for repo in github_runner_repos %}
-    {{ ('actions-runner@' ~ repo.repo ~ '.service') | quote }}
+{% for instance in github_runner_instances %}
+    {{ ('actions-runner@' ~ instance.name ~ '.service') | quote }}
 {% endfor %}
 )
 frozen=()
@@ -37,48 +42,75 @@ run_ci_docker() {
     runuser -u "$ci_user" -- docker --host "unix:///run/user/$ci_uid/docker.sock" "$@"
 }
 
+# Filesystem cleanup runs inside the daemon's user namespace as the runner user:
+# it can remove files owned by container sub-UIDs but cannot follow a symlink
+# swapped in by a surviving container to anything outside that account's data.
+run_ci_ns() {
+    local pid
+    pid=$(cat "/run/user/$ci_uid/dockerd-rootless/child_pid")
+    runuser -u "$ci_user" -- nsenter -U --preserve-credentials -t "$pid" "$@"
+}
+
+select_account() {
+    IFS=: read -r ci_user ci_home ci_name <<< "$1"
+    ci_uid=$(id -u "$ci_user")
+}
+
 for unit in "${runner_units[@]}"; do
     if systemctl is-active --quiet "$unit"; then
         frozen+=("$unit")
         systemctl freeze "$unit"
     fi
 done
-if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
-    echo 'CI cleanup skipped: a job is active.'
-    exit 0
-else
-    result=$?
-    (( result == 1 )) || exit "$result"
-fi
+for account in "${ci_accounts[@]}"; do
+    select_account "$account"
+    if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
+        echo 'CI cleanup skipped: a job is active.'
+        exit 0
+    else
+        result=$?
+        (( result == 1 )) || exit "$result"
+    fi
+done
 started=1
 
-run_ci_docker container prune --force
-run_ci_docker volume prune --force
-volumes=$(run_ci_docker volume ls --filter dangling=true --format '{{ '{{.Name}}' }}')
-while IFS= read -r volume; do
-    case "$volume" in
-        buildx_buildkit_*_state) run_ci_docker volume rm "$volume" ;;
-    esac
-done <<< "$volumes"
+for account in "${ci_accounts[@]}"; do
+    select_account "$account"
+    run_ci_docker container prune --force
+    run_ci_docker volume prune --force
+    volumes=$(run_ci_docker volume ls --filter dangling=true --format '{{ '{{.Name}}' }}')
+    while IFS= read -r volume; do
+        case "$volume" in
+            buildx_buildkit_*_state) run_ci_docker volume rm "$volume" ;;
+        esac
+    done <<< "$volumes"
 
-run_ci_docker image prune --all --force
-run_ci_docker buildx prune --builder default --force --max-used-space 2GB
-builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
-    python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
-while IFS= read -r builder; do
-    [[ -n "$builder" ]] || continue
-    run_ci_docker buildx prune --builder "$builder" --force --max-used-space 2GB
-done <<< "$builders"
+    run_ci_docker image prune --force
+    run_ci_docker buildx prune --builder default --force --max-used-space {{ ci_build_cache_budget }}
+    builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
+        python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
+    while IFS= read -r builder; do
+        [[ -n "$builder" ]] || continue
+        run_ci_docker buildx prune --builder "$builder" --force --max-used-space {{ ci_build_cache_budget }}
+    done <<< "$builders"
 
-used=$(df -B1 --output=used /srv | tail -1)
-if (( used > 25000000000 )); then
-{% for repo in github_runner_repos %}
-    rm -rf --one-file-system -- {{ (github_runner_home ~ '/' ~ repo.repo ~ '/_work') | quote }}
-{% endfor %}
-    rm -rf --one-file-system -- "$ci_home/.cache" "$ci_home/.local/share/pnpm/store"
+    retention={{ ci_cache_retention_days }}
+    cache_dirs=(
+        "$ci_home/$ci_name/_work/.pnpm-store"
+        "$ci_home/.cache" "$ci_home/.npm" "$ci_home/.local/share/pnpm/store"
+    )
+    for dir in "${cache_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        run_ci_ns find "$dir" -xdev -mindepth 1 \( -type f -atime "+$retention" -o -type d -empty \) -delete
+    done
+    work="$ci_home/$ci_name/_work"
+    if [[ -d "$work" ]]; then
+        run_ci_ns find "$work" -xdev -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' \
+            -mtime "+$retention" -exec rm -rf --one-file-system -- {} +
+    fi
     if [[ -d "$ci_home/_tool" ]]; then
-        find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' \
+        run_ci_ns find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' -mtime "+$retention" \
             -exec rm -rf --one-file-system -- {} +
     fi
-fi
+done
 df -h /srv

@@ -25,6 +25,7 @@
     append: false
     system: true
     create_home: true
+    password_lock: true
   loop: "{{ github_runner_instances }}"
   loop_control:
     label: "{{ item.user }}"

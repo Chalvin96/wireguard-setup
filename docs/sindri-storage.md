@@ -25,12 +25,6 @@ Deploy the collector and alert rules without redeploying the rest of the stack:
 ansible-playbook ansible/sindri-monitoring.yml --vault-password-file .vault_password
 ```
 
-Run the collector regression check:
-
-```bash
-bash tests/test-sindri-health.sh
-```
-
 Idle CI cleanup runs every thirty minutes from `/etc/cron.d/ci-cleanup`. It freezes
 idle runner listeners, skips active jobs, and resumes listeners on success or
 failure. Cleanup targets the CI daemon only: disposable anonymous volumes,

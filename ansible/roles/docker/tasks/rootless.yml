@@ -15,11 +15,11 @@
     - docker_existing_info.rc == 0
     - "'rootless' not in docker_existing_info.stdout"
 
-- name: Require the migration playbook for populated rootful installations
+- name: Refuse to replace a populated rootful installation
   ansible.builtin.assert:
     that:
-      - docker_rootless_migration | bool or docker_existing_containers.stdout | default('') | length == 0
-    fail_msg: Existing rootful containers require ansible/migrate-rootless.yml; do not stop or replace their daemon automatically.
+      - docker_existing_containers.stdout | default('') | length == 0
+    fail_msg: Existing rootful containers found; move them by hand rather than letting this role stop their daemon.
 
 - name: Create rootless daemon accounts
   ansible.builtin.user:
@@ -28,6 +28,7 @@
     shell: /bin/bash
     system: true
     create_home: true
+    password_lock: true
   loop: "{{ docker_rootless_accounts }}"
   loop_control:
     label: "{{ item.name }}"

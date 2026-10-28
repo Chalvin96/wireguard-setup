@@ -30,10 +30,9 @@ Keep the original boot-disk directories until mounted services, image/container
 inventories and a Penpot backup pass verification; only then remove the originals.
 
 Neither account belongs to the root-equivalent `docker` group. Their homes
-and runtime directories are private. Rootful Docker is masked after migration.
+and runtime directories are private. Rootful Docker is masked.
 Both daemons start at boot through systemd user services with lingering enabled.
-Apps use weekly pruning; CI cleanup is owned by `ci-maintenance`, installed by
-both normal deployment and the migration playbook.
+Apps use weekly pruning; CI cleanup is owned by `ci-maintenance`, installed by the deployment.
 
 The traditional `/var/run/docker.sock` path points to **CI's** socket because
 GitHub's built-in job-container handling mounts that exact path. It must never
@@ -42,30 +41,9 @@ by the Penpot service, backup service, and configuration-management tasks.
 
 ## Existing installations
 
-Do not simply redeploy over existing rootful containers. The ordinary Docker
-role refuses a populated rootful installation. During a maintenance window:
-
-```bash
-uvx --python 3.12 --from 'ansible-core>=2.17,<2.18' ansible-playbook \
-  ansible/migrate-rootless.yml --vault-password-file .vault_password \
-  -e rootless_migration_confirm=true
-```
-
-Use the repository's Ansible configuration and installed collections, as with
-`run.sh`. The playbook refuses active runner jobs or unknown running containers.
-It transfers the existing Penpot images, pauses runners, stops application
-writers, takes a final database/assets backup, and archives the stopped project
-with its original numeric ownership. It remaps bind-mounted data for rootless
-UIDs, verifies HTTP health and database row counts, and tests the backup service.
-Application-stage failures restore the original data and service configuration.
-Preparation failures restore the original runner Docker context and restart only
-runner services that were active before migration.
-
-Rollback archives contain secrets. They remain root-only under
-`/srv/backups/rootless-migration`; keep them until real Penpot usage and CI have
-been verified. The old rootful Docker data is retained, not pruned or deleted.
-Failures during the final CI cutover need operator attention; do not assume the
-application rollback block covers that later stage.
+The role refuses to touch a host that still has containers on a rootful daemon.
+Move those by hand first (stop writers, back up, recreate under the apps
+account); the one-off migration playbook has been removed now that it has run.
 
 Before assigning subordinate UID/GID ranges, the role checks for collisions and
 refuses to change an existing account's mappings. Changing mappings later is a
@@ -130,7 +108,7 @@ disk capacity, or LAN. CI can still contact published application endpoints.
 Keep runners restricted to trusted private repositories. Rootless Docker is not
 a VM-strength boundary for hostile jobs.
 
-Persistent runner workspaces remain persistent. This migration does not implement
+Persistent runner workspaces remain persistent. This setup does not implement
 ephemeral runners or guaranteed cancellation cleanup. Use unique Compose project
 names and scope cleanup to each job's disposable resources.
 
@@ -174,8 +152,6 @@ workflow is compatible.
 
 ## Verification
 
-`tests/rootless-docker.yml` exercises the Docker role on a disposable systemd
-Debian container. It checks both daemons are rootless, CI cannot access the apps
-socket, the compatibility socket resolves to CI, and rootful Docker is masked.
-Run the role twice to check idempotence. Also verify real Penpot data, its backup,
-resource limits, and CI workflows on the target VM after migration.
+After a deploy, check on the host that both daemons report `rootless`, that the
+CI accounts cannot reach the apps socket, and that rootful Docker is masked. Also
+verify a Penpot backup, the resource limits, and a CI workflow run.

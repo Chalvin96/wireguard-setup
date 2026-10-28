@@ -6,7 +6,6 @@ docker_ci_subuid: 296608
 docker_ci_cpu_quota: "300%" # per runner instance
 docker_ci_memory_max: "6G" # per runner instance
 # Only the explicit migration playbook may leave the old daemon running.
-docker_rootless_migration: false
 # Applications daemon plus one CI daemon per runner instance (`ci` marks them).
 docker_rootless_accounts: >-
   {%- set out = [

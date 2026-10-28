@@ -24,8 +24,9 @@
   notify: Restart CI runners
 
 # A restarted daemon gets a new network namespace; runners must rejoin it.
+# try-restart leaves stopped runners stopped, which the systemd module cannot express.
 - name: Restart CI runners
-  ansible.builtin.command: "systemctl try-restart actions-runner@{{ item.name }}.service"
+  ansible.builtin.command: "systemctl try-restart actions-runner@{{ item.name }}.service" # noqa: command-instead-of-module
   loop: "{{ github_runner_instances | default([]) }}"
   loop_control:
     label: "{{ item.name }}"

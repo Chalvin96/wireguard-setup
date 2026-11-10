@@ -22,7 +22,8 @@ source = source.replace('/var/lib/prometheus/node-exporter', str(temporary / 'me
         {'name': 'no-work', 'user': 'ci-second', 'home': str(temporary / 'ci-second')},
         {'name': 'fixture-3', 'user': 'ci-third', 'home': str(temporary / 'ci-third')},
     ],
-    ci_build_cache_budget='5GB', ci_cache_retention_days=14))
+    ci_build_cache_budget='5GB', ci_cache_retention_days=14,
+    ci_image_retention_days=3, ci_pressure_percent=75))
 PY
 cat > "$temporary/bin/systemctl" <<'EOF'
 #!/bin/bash
@@ -46,7 +47,7 @@ exit "${JOB_STATUS:-1}"
 EOF
 cat > "$temporary/bin/df" <<'EOF'
 #!/bin/bash
-echo "${USED_BYTES:-10000000000}"
+printf 'Use%%\n %s%%\n' "${USED_PERCENT:-40}"
 EOF
 echo 4242 > "$temporary/child_pid"
 cat > "$temporary/bin/nsenter" <<'EOF'
@@ -76,12 +77,13 @@ grep -q '^systemctl freeze ' "$CALLS"
 grep -q '^systemctl thaw ' "$CALLS"
 ! grep -q '^runuser ' "$CALLS"
 
-# A job on any one instance's account must skip cleanup for all of them.
+# A job on one instance's account skips only that instance.
 : > "$CALLS"
 BUSY_UID=997 bash "$temporary/cleanup"
-grep -q '^systemctl freeze ' "$CALLS"
 grep -q '^systemctl thaw ' "$CALLS"
-! grep -q '^runuser ' "$CALLS"
+! grep -q 'user/997/docker.sock' "$CALLS"
+grep -q 'user/999/docker.sock' "$CALLS"
+grep -q 'user/998/docker.sock' "$CALLS"
 
 : > "$CALLS"
 if JOB_STATUS=2 bash "$temporary/cleanup"; then exit 1; fi
@@ -104,7 +106,7 @@ touch -d '30 days ago' -a "$work/.pnpm-store/old/stale" "$temporary/ci/.cache/st
 mkdir -p "$temporary/ci/_tool/trivy-fixture/fanal" "$temporary/ci/_tool/trivy-new" "$temporary/ci/_tool/node"
 touch "$temporary/ci/_tool/trivy-fixture/fanal/disposable" "$temporary/ci/_tool/node/keep"
 touch -d '30 days ago' "$temporary/ci/_tool/trivy-fixture"
-USED_BYTES=40000000000 bash "$temporary/cleanup"
+USED_PERCENT=40 bash "$temporary/cleanup"
 test ! -e "$work/stale"
 test -e "$work/fresh/file"
 test ! -e "$temporary/ci-third/fixture-3/_work/stale"
@@ -117,8 +119,9 @@ test -e "$temporary/ci/.cache/fresh"
 test ! -e "$temporary/ci/_tool/trivy-fixture"
 test -e "$temporary/ci/_tool/trivy-new"
 test -e "$temporary/ci/_tool/node/keep"
-! grep -q 'image prune.*--all' "$CALLS"
-grep -q 'image prune --force$' "$CALLS"
+grep -q 'image prune --all --force --filter until=72h$' "$CALLS"
+! grep -q 'until=1h' "$CALLS"
+grep -qx 'ci_data_used_percent 40' "$temporary/metrics/ci-disk.prom"
 grep -q 'volume rm buildx_buildkit_old_state$' "$CALLS"
 ! grep -q 'volume rm keep-named-data' "$CALLS"
 grep -q 'buildx prune --builder default --force --max-used-space 5GB$' "$CALLS"
@@ -130,4 +133,10 @@ grep -q '^systemctl thaw ' "$CALLS"
 grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
 ! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
 grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
-echo 'PASS: per-instance daemons, busy/error skips, failure thaw, scoped cache pruning, age-based retention and cleanup metrics.'
+
+# Above the pressure level, idle images go after an hour.
+: > "$CALLS"
+USED_PERCENT=80 bash "$temporary/cleanup"
+test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
+grep -qx 'ci_data_used_percent 80' "$temporary/metrics/ci-disk.prom"
+echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, scoped cache pruning, age-based retention and cleanup metrics.'

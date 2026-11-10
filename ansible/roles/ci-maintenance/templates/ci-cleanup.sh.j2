@@ -10,15 +10,26 @@ ci_accounts=(
     {{ (instance.user ~ ':' ~ instance.home ~ ':' ~ instance.name) | quote }}
 {% endfor %}
 )
-runner_units=(
-{% for instance in github_runner_instances %}
-    {{ ('actions-runner@' ~ instance.name ~ '.service') | quote }}
-{% endfor %}
-)
 frozen=()
+idle_accounts=()
 started=0
 exec 9>/run/lock/ci-cleanup.lock
 flock -n 9 || exit 0
+
+# Percentage used of the filesystem that holds the first runner's data.
+disk_used_percent() {
+    local home=${ci_accounts[0]#*:}
+    df --output=pcent "${home%%:*}" 2>/dev/null | tail -n 1 | tr -dc '0-9'
+}
+
+write_disk_metric() {
+    local used temporary=/var/lib/prometheus/node-exporter/ci-disk.tmp
+    used=$(disk_used_percent) || return 0
+    [[ -n "$used" ]] || return 0
+    printf 'ci_data_used_percent %s\n' "$used" > "$temporary"
+    chmod 0644 "$temporary"
+    mv "$temporary" /var/lib/prometheus/node-exporter/ci-disk.prom
+}
 
 finish() {
     status=$?
@@ -33,6 +44,7 @@ finish() {
         chmod 0644 "$temporary"
         mv "$temporary" /var/lib/prometheus/node-exporter/ci-cleanup.prom
     fi
+    write_disk_metric
     exit "$status"
 }
 trap finish EXIT
@@ -56,25 +68,29 @@ select_account() {
     ci_uid=$(id -u "$ci_user")
 }
 
-for unit in "${runner_units[@]}"; do
+# A runner with an active job is left alone; the others are cleaned in the same run.
+for account in "${ci_accounts[@]}"; do
+    select_account "$account"
+    unit="actions-runner@${ci_name}.service"
     if systemctl is-active --quiet "$unit"; then
         frozen+=("$unit")
         systemctl freeze "$unit"
     fi
-done
-for account in "${ci_accounts[@]}"; do
-    select_account "$account"
     if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
-        echo 'CI cleanup skipped: a job is active.'
-        exit 0
+        echo "CI cleanup skipped for $ci_name: a job is active."
+        systemctl thaw "$unit" || true
     else
         result=$?
         (( result == 1 )) || exit "$result"
+        idle_accounts+=("$account")
     fi
 done
+if [[ -z "${idle_accounts[*]:-}" ]]; then
+    exit 0
+fi
 started=1
 
-for account in "${ci_accounts[@]}"; do
+for account in "${idle_accounts[@]}"; do
     select_account "$account"
     run_ci_docker container prune --force
     run_ci_docker volume prune --force
@@ -85,7 +101,14 @@ for account in "${ci_accounts[@]}"; do
         esac
     done <<< "$volumes"
 
-    run_ci_docker image prune --force
+    # Unused tagged images expire by age; under disk pressure anything not used
+    # for the last hour goes. Images used by a container are never removed.
+    run_ci_docker image prune --all --force --filter "until=$(( {{ ci_image_retention_days }} * 24 ))h"
+    used=$(disk_used_percent) || used=0
+    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
+        echo "CI data is ${used}% full: pruning unused images older than one hour."
+        run_ci_docker image prune --all --force --filter until=1h
+    fi
     run_ci_docker buildx prune --builder default --force --max-used-space {{ ci_build_cache_budget }}
     builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
         python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
@@ -113,4 +136,4 @@ for account in "${ci_accounts[@]}"; do
             -exec rm -rf --one-file-system -- {} +
     fi
 done
-df -h /srv
+df -h "$ci_home"

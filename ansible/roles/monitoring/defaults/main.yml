@@ -258,6 +258,17 @@ monitoring_sindri_alerts:
       }} ago (limit 6 h)."
     action: Check cron, active CI jobs and the ci-cleanup journal.
     expression: time() - ci_cleanup_last_run_timestamp_seconds{job="sindri"}
+  - uid: sindri-ci-disk-high
+    no_data: OK
+    title: Sindri CI storage nearly full
+    threshold: 85
+    duration: 10m
+    severity: warning
+    measurement:
+      !unsafe 'CI data volume: {{ printf "%.0f" $values.A.Value }}% used (limit
+      85%).'
+    action: Check the ci-cleanup journal and per-runner Docker usage.
+    expression: ci_data_used_percent{job="sindri"}
   - uid: sindri-health-stale
     title: Sindri Penpot health collector overdue
     threshold: 180

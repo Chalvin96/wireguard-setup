@@ -2,3 +2,6 @@
 # Measured CI Docker build cache was 2.0 GB; allow room for growth per builder.
 ci_build_cache_budget: 5GB
 ci_cache_retention_days: 14
+# Unused tagged images expire after this; above the pressure level anything idle for an hour goes.
+ci_image_retention_days: 3
+ci_pressure_percent: 75

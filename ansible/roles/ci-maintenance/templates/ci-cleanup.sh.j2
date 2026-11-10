@@ -63,13 +63,33 @@ run_ci_ns() {
     runuser -u "$ci_user" -- nsenter -U --preserve-credentials -t "$pid" "$@"
 }
 
-# Safe while jobs run: Docker never removes an image a container uses, and
-# anything pulled in the last hour is kept.
+# Remove all but the newest N unused images of each repository. Base images
+# (one tag per repository) stay cached, so jobs keep their warm pulls; only
+# superseded build tags go. `docker images` lists newest first, and an image in
+# use by a container is refused by rmi, which is deliberately not forced.
+keep_newest_images() {
+    local keep=$1 repository tag image_id
+    local -A count=() seen=()
+    while IFS=$'\t' read -r repository tag image_id; do
+        [[ "$repository" != '<none>' && "$tag" != '<none>' ]] || continue
+        [[ -z "${seen[$repository/$image_id]:-}" ]] || continue
+        seen[$repository/$image_id]=1
+        count[$repository]=$(( ${count[$repository]:-0} + 1 ))
+        (( ${count[$repository]} > keep )) || continue
+        run_ci_docker rmi "$repository:$tag" >/dev/null 2>&1 || true
+    done < <(run_ci_docker images --format '{{ '{{.Repository}}' }}\t{{ '{{.Tag}}' }}\t{{ '{{.ID}}' }}')
+}
+
+# Safe while jobs run. First keep only the newest image of each repository; only
+# if the disk is still under pressure, drop anything idle for over an hour.
 prune_under_pressure() {
     local used
     used=$(disk_used_percent) || used=0
+    (( ${used:-0} >= {{ ci_pressure_percent }} )) || return 0
+    echo "CI data is ${used}% full: keeping only the newest image per repository for $ci_name."
+    keep_newest_images 1
+    used=$(disk_used_percent) || used=0
     if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
-        echo "CI data is ${used}% full: pruning unused images older than one hour for $ci_name."
         run_ci_docker image prune --all --force --filter until=1h || echo "Pressure prune failed for $ci_name."
     fi
 }
@@ -113,9 +133,8 @@ for account in "${idle_accounts[@]}"; do
         esac
     done <<< "$volumes"
 
-    # Unused tagged images expire by age; under disk pressure anything not used
-    # for the last hour goes. Images used by a container are never removed.
-    run_ci_docker image prune --all --force --filter "until=$(( {{ ci_image_retention_days }} * 24 ))h"
+    run_ci_docker image prune --force
+    keep_newest_images {{ ci_images_kept_per_repository }}
     prune_under_pressure
     run_ci_docker buildx prune --builder default --force --max-used-space {{ ci_build_cache_budget }}
     builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |

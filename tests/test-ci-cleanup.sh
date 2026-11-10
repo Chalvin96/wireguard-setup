@@ -23,7 +23,7 @@ source = source.replace('/var/lib/prometheus/node-exporter', str(temporary / 'me
         {'name': 'fixture-3', 'user': 'ci-third', 'home': str(temporary / 'ci-third')},
     ],
     ci_build_cache_budget='5GB', ci_cache_retention_days=14,
-    ci_image_retention_days=3, ci_pressure_percent=75))
+    ci_images_kept_per_repository=2, ci_pressure_percent=75))
 PY
 cat > "$temporary/bin/systemctl" <<'EOF'
 #!/bin/bash
@@ -64,6 +64,7 @@ case "$*" in *' -- nsenter '*) shift 3; exec "$@" ;; esac
 if [[ "${DOCKER_FAIL:-0}" == 1 ]]; then exit 17; fi
 case "$*" in
     *'volume ls '*) printf 'buildx_buildkit_old_state\nkeep-named-data\n' ;;
+    *' images --format'*) printf 'app\tsha-new\tid1\napp\tlatest\tid1\napp\tsha-old\tid2\napp\tsha-older\tid3\nbase\tv1\tid4\nbase\tv0\tid5\n<none>\t<none>\tid6\n' ;;
     *'buildx ls '*) printf '{"Name":"default","Driver":"docker"}\n{"Name":"rootless","Driver":"docker"}\n{"Name":"persistent","Driver":"docker-container"}\n{"Name":"persistent","Driver":"docker-container"}\n' ;;
 esac
 EOF
@@ -119,7 +120,10 @@ test -e "$temporary/ci/.cache/fresh"
 test ! -e "$temporary/ci/_tool/trivy-fixture"
 test -e "$temporary/ci/_tool/trivy-new"
 test -e "$temporary/ci/_tool/node/keep"
-grep -q 'image prune --all --force --filter until=72h$' "$CALLS"
+grep -q 'image prune --force$' "$CALLS"
+test "$(grep -c 'docker.sock rmi app:sha-older$' "$CALLS")" -eq 3
+test "$(grep -c 'docker.sock rmi base:' "$CALLS")" -eq 0
+! grep -q 'rmi app:sha-old$\|rmi app:latest\|rmi app:sha-new' "$CALLS"
 ! grep -q 'until=1h' "$CALLS"
 grep -qx 'ci_data_used_percent 40' "$temporary/metrics/ci-disk.prom"
 grep -q 'volume rm buildx_buildkit_old_state$' "$CALLS"
@@ -138,6 +142,9 @@ grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
 : > "$CALLS"
 JOB_STATUS=0 USED_PERCENT=80 bash "$temporary/cleanup"
 test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
+test "$(grep -c 'docker.sock rmi base:v0$' "$CALLS")" -eq 3
+test "$(grep -c 'rmi app:sha-old$' "$CALLS")" -eq 3
+! grep -q 'rmi base:v1\|rmi app:latest\|rmi app:sha-new' "$CALLS"
 ! grep -q 'container prune\|buildx prune\|nsenter' "$CALLS"
 
 # Above the pressure level, idle images go after an hour.

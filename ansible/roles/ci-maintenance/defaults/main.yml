@@ -3,6 +3,7 @@
 # was 5 GB and Trivy/tool/work directories another ~8 GB. Measured need was 2.0 GB.
 ci_build_cache_budget: 3GB
 ci_cache_retention_days: 7
-# Unused tagged images expire after this; above the pressure level anything idle for an hour goes.
-ci_image_retention_days: 3
+# Newest images kept per repository (builds add tags; base images stay warm). Above the
+# pressure level only the newest is kept, then anything idle for an hour goes.
+ci_images_kept_per_repository: 2
 ci_pressure_percent: 75

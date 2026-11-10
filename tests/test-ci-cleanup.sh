@@ -134,6 +134,12 @@ grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
 ! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
 grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
 
+# Under pressure, busy runners still get the safe image prune and nothing else.
+: > "$CALLS"
+JOB_STATUS=0 USED_PERCENT=80 bash "$temporary/cleanup"
+test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
+! grep -q 'container prune\|buildx prune\|nsenter' "$CALLS"
+
 # Above the pressure level, idle images go after an hour.
 : > "$CALLS"
 USED_PERCENT=80 bash "$temporary/cleanup"

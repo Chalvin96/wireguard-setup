@@ -63,6 +63,17 @@ run_ci_ns() {
     runuser -u "$ci_user" -- nsenter -U --preserve-credentials -t "$pid" "$@"
 }
 
+# Safe while jobs run: Docker never removes an image a container uses, and
+# anything pulled in the last hour is kept.
+prune_under_pressure() {
+    local used
+    used=$(disk_used_percent) || used=0
+    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
+        echo "CI data is ${used}% full: pruning unused images older than one hour for $ci_name."
+        run_ci_docker image prune --all --force --filter until=1h || echo "Pressure prune failed for $ci_name."
+    fi
+}
+
 select_account() {
     IFS=: read -r ci_user ci_home ci_name <<< "$1"
     ci_uid=$(id -u "$ci_user")
@@ -79,6 +90,7 @@ for account in "${ci_accounts[@]}"; do
     if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
         echo "CI cleanup skipped for $ci_name: a job is active."
         systemctl thaw "$unit" || true
+        prune_under_pressure
     else
         result=$?
         (( result == 1 )) || exit "$result"
@@ -104,11 +116,7 @@ for account in "${idle_accounts[@]}"; do
     # Unused tagged images expire by age; under disk pressure anything not used
     # for the last hour goes. Images used by a container are never removed.
     run_ci_docker image prune --all --force --filter "until=$(( {{ ci_image_retention_days }} * 24 ))h"
-    used=$(disk_used_percent) || used=0
-    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
-        echo "CI data is ${used}% full: pruning unused images older than one hour."
-        run_ci_docker image prune --all --force --filter until=1h
-    fi
+    prune_under_pressure
     run_ci_docker buildx prune --builder default --force --max-used-space {{ ci_build_cache_budget }}
     builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
         python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')

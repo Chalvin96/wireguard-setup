@@ -30,10 +30,9 @@ Keep the original boot-disk directories until mounted services, image/container
 inventories and a Penpot backup pass verification; only then remove the originals.
 
 Neither account belongs to the root-equivalent `docker` group. Their homes
-and runtime directories are private. Rootful Docker is masked after migration.
+and runtime directories are private. Rootful Docker is masked.
 Both daemons start at boot through systemd user services with lingering enabled.
-Apps use weekly pruning; CI cleanup is owned by `ci-maintenance`, installed by
-both normal deployment and the migration playbook.
+Apps use weekly pruning; CI cleanup is owned by `ci-maintenance`, installed by the deployment.
 
 The traditional `/var/run/docker.sock` path points to **CI's** socket because
 GitHub's built-in job-container handling mounts that exact path. It must never
@@ -42,30 +41,9 @@ by the Penpot service, backup service, and configuration-management tasks.
 
 ## Existing installations
 
-Do not simply redeploy over existing rootful containers. The ordinary Docker
-role refuses a populated rootful installation. During a maintenance window:
-
-```bash
-uvx --python 3.12 --from 'ansible-core>=2.17,<2.18' ansible-playbook \
-  ansible/migrate-rootless.yml --vault-password-file .vault_password \
-  -e rootless_migration_confirm=true
-```
-
-Use the repository's Ansible configuration and installed collections, as with
-`run.sh`. The playbook refuses active runner jobs or unknown running containers.
-It transfers the existing Penpot images, pauses runners, stops application
-writers, takes a final database/assets backup, and archives the stopped project
-with its original numeric ownership. It remaps bind-mounted data for rootless
-UIDs, verifies HTTP health and database row counts, and tests the backup service.
-Application-stage failures restore the original data and service configuration.
-Preparation failures restore the original runner Docker context and restart only
-runner services that were active before migration.
-
-Rollback archives contain secrets. They remain root-only under
-`/srv/backups/rootless-migration`; keep them until real Penpot usage and CI have
-been verified. The old rootful Docker data is retained, not pruned or deleted.
-Failures during the final CI cutover need operator attention; do not assume the
-application rollback block covers that later stage.
+The role refuses to touch a host that still has containers on a rootful daemon.
+Move those by hand first (stop writers, back up, recreate under the apps
+account); the one-off migration playbook has been removed now that it has run.
 
 Before assigning subordinate UID/GID ranges, the role checks for collisions and
 refuses to change an existing account's mappings. Changing mappings later is a
@@ -119,21 +97,22 @@ and token-bearing connection URL out of this public repository and logs.
 
 ## Boundaries and CI compatibility
 
-The combined CI user slice limits both runner instances, their direct child
-processes, and CI's rootless daemon/containers (`docker_ci_cpu_quota`,
-`docker_ci_memory_max`). Per-runner limits still apply. Verify the live cgroup
-limits: container-only flags are insufficient to reserve capacity for apps.
+Every runner instance has its own account, rootless daemon and user slice
+(`docker_ci_cpu_quota`, `docker_ci_memory_max` apply per instance), covering the
+runner, its child processes and its containers. Per-runner limits still apply.
+Verify the live cgroup limits: container-only flags are insufficient to reserve
+capacity for apps.
 
 This isolates Docker management and file permissions, not the shared kernel,
 disk capacity, or LAN. CI can still contact published application endpoints.
 Keep runners restricted to trusted private repositories. Rootless Docker is not
 a VM-strength boundary for hostile jobs.
 
-Persistent runner workspaces remain persistent. This migration does not implement
+Persistent runner workspaces remain persistent. This setup does not implement
 ephemeral runners or guaranteed cancellation cleanup. Use unique Compose project
 names and scope cleanup to each job's disposable resources.
 
-Both runner services use one `RUNNER_TOOL_CACHE` on the data disk. The runner role seeds
+Each runner instance has its own `RUNNER_TOOL_CACHE` under its home. The runner role seeds
 the configured Node versions from `nodejs.org`, verifies the official SHA-256
 checksums and executables, and writes the completion markers expected by
 `actions/setup-node`. Existing workflows requesting those versions can use the
@@ -146,16 +125,33 @@ listener and direct job processes instead of leaving orphan workers accepting
 more jobs. Docker-created containers are separate processes: this is not a
 replacement for scoped container cleanup.
 
-Docker 29.5+ supports real host networking in rootless mode. Older versions
-namespace `--network host` inside RootlessKit. Still
-validate Playwright, Compose integration tests, and container jobs before assuming
-every existing workflow is compatible. Host ports are shared across both daemons
-and both repository runners, so avoid assuming fixed ports are globally free.
+## Runner isolation
+
+A repository can run several runners in parallel (`instances: N` on its
+`github_runner_repos` entry in the private config). Each instance gets its own
+account, rootless daemon, image store and Docker config, and its runner unit
+joins that daemon's network namespace (`actions-runner-exec`). The daemons
+disable RootlessKit host port forwarding, so ports published by one job
+(`localhost:5432`, fixed test ports) exist only inside that runner's namespace
+and concurrent jobs cannot collide on ports, networks, compose projects or
+registry logins. The runner still runs as its unprivileged account: the unit
+grants `CAP_SYS_ADMIN` only to join the namespace and the wrapper drops it before
+the runner starts. After a daemon restart the runner must be restarted to join
+the new namespace (the role's handler does this).
+
+Job containers mount `/var/run/docker.sock`. The host's compatibility symlink for
+that path belongs to a single account, so each CI daemon re-points it to its own
+socket inside its mount namespace (`ci-docker-sock-link`, run after the daemon
+starts). Without it, other instances' container jobs fail to start, or would
+reach another runner's daemon.
+
+Layers and build cache are per daemon, so each instance pulls and stores its own
+images; budget disk accordingly. Validate Playwright, Compose integration tests
+and container jobs against the isolated network before assuming every
+workflow is compatible.
 
 ## Verification
 
-`tests/rootless-docker.yml` exercises the Docker role on a disposable systemd
-Debian container. It checks both daemons are rootless, CI cannot access the apps
-socket, the compatibility socket resolves to CI, and rootful Docker is masked.
-Run the role twice to check idempotence. Also verify real Penpot data, its backup,
-resource limits, and CI workflows on the target VM after migration.
+After a deploy, check on the host that both daemons report `rootless`, that the
+CI accounts cannot reach the apps socket, and that rootful Docker is masked. Also
+verify a Penpot backup, the resource limits, and a CI workflow run.

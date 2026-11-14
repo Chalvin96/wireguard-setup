@@ -25,18 +25,19 @@ Deploy the collector and alert rules without redeploying the rest of the stack:
 ansible-playbook ansible/sindri-monitoring.yml --vault-password-file .vault_password
 ```
 
-Run the collector regression check:
-
-```bash
-bash tests/test-sindri-health.sh
-```
-
 Idle CI cleanup runs every thirty minutes from `/etc/cron.d/ci-cleanup`. It freezes
 idle runner listeners, skips active jobs, and resumes listeners on success or
 failure. Cleanup targets the CI daemon only: disposable anonymous volumes,
-detached BuildKit cache volumes, stopped containers, unused images, and a 2 GB
-cache budget per builder. If storage remains above 25 GB, disposable CI workspaces
-and dependency caches are also removed. Application data and backups are excluded.
+detached BuildKit cache volumes, stopped containers, dangling images, and a 3 GB
+cache budget per builder. Per repository the two newest image tags are kept; older
+tags are removed. Workspaces under `_work` and `trivy-*` tool directories unused
+for 7 days are removed. Dependency caches (`~/.cache`, `~/.npm`, the pnpm stores)
+are never trimmed file by file; at 75% disk use or more, each idle runner's caches
+are removed whole and rebuild on the next job. At 75% or more, image pruning also
+runs on runners with an active job: only the newest image per repository is kept,
+then, if usage is still high, images idle for over an hour are pruned. Capacity is
+watched by the 85% `ci_data_used_percent` alert. Application data and backups are
+excluded.
 Cleanup failures and samples older than six hours are monitored.
 
 Deploy cleanup, host swap preference and alert updates with:

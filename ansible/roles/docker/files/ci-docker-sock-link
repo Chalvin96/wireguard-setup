@@ -1,0 +1,9 @@
+#!/bin/sh
+# Managed by Ansible. Run as a CI rootless daemon's ExecStartPost.
+# Job containers mount /var/run/docker.sock; inside the daemon's own mount
+# namespace make that path resolve to this daemon's socket, not the host's
+# compatibility symlink (which belongs to a different runner instance).
+set -eu
+dir="${XDG_RUNTIME_DIR:?}"
+pid=$(cat "$dir/dockerd-rootless/child_pid")
+exec nsenter -U -m --preserve-credentials -t "$pid" ln -sfn "$dir/docker.sock" /run/docker.sock

@@ -31,10 +31,11 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Check secret handling and monitoring alerts
+      - name: Check cleanup and backup scripts
         run: |
-          bash tests/test-security-config.sh
-          bash tests/test-monitoring-alerts.sh
+          bash tests/test-ci-cleanup.sh
+          bash tests/test-penpot-backup.sh
+          python tests/test_proxmox_health.py
 
       - name: Check network isolation and VPS firewall
         run: |

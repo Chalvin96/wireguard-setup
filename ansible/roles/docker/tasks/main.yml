@@ -20,7 +20,6 @@
 
 - name: Disable rootful Docker and provide the CI compatibility socket
   ansible.builtin.include_tasks: rootless-cutover.yml
-  when: not docker_rootless_migration | bool
 
 - name: Install Node Exporter
   ansible.builtin.apt:

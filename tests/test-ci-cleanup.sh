@@ -98,12 +98,15 @@ grep -qx 'ci_cleanup_success 0' "$temporary/metrics/ci-cleanup.prom"
 
 : > "$CALLS"
 work="$temporary/ci/fixture/_work"
-mkdir -p "$work/stale" "$work/fresh" "$work/_actions" "$work/.pnpm-store/old" "$temporary/ci/.cache"
-touch "$work/stale/file" "$work/fresh/file" "$work/_actions/file" "$work/.pnpm-store/old/stale" "$work/.pnpm-store/fresh" "$temporary/ci/.cache/stale" "$temporary/ci/.cache/fresh"
+mkdir -p "$work/stale" "$work/fresh" "$work/_actions" "$work/.pnpm-store/old" "$temporary/ci/.cache/uv/archive-v0/entry" "$temporary/ci/.npm"
+touch "$work/stale/file" "$work/fresh/file" "$work/_actions/file" "$work/.pnpm-store/old/stale" "$work/.pnpm-store/fresh" "$temporary/ci/.cache/uv/archive-v0/entry/py.typed" "$temporary/ci/.npm/keep"
+# Regression: below the pressure level nothing may touch package caches. Per-file
+# aging used to delete unread 0-byte files (py.typed markers) inside uv cache
+# entries and hollow them, so installs linked trees with those files missing.
+touch -d '30 days ago' -a "$temporary/ci/.cache/uv/archive-v0/entry/py.typed" "$work/.pnpm-store/old/stale"
 mkdir -p "$temporary/ci-third/fixture-3/_work/stale" "$temporary/ci-third/fixture-3/_work/fresh"
 touch -d '30 days ago' "$temporary/ci-third/fixture-3/_work/stale"
-touch -d '30 days ago' "$work/stale" "$work/.pnpm-store/old/stale" "$temporary/ci/.cache/stale"
-touch -d '30 days ago' -a "$work/.pnpm-store/old/stale" "$temporary/ci/.cache/stale"
+touch -d '30 days ago' "$work/stale"
 mkdir -p "$temporary/ci/_tool/trivy-fixture/fanal" "$temporary/ci/_tool/trivy-new" "$temporary/ci/_tool/node"
 touch "$temporary/ci/_tool/trivy-fixture/fanal/disposable" "$temporary/ci/_tool/node/keep"
 touch -d '30 days ago' "$temporary/ci/_tool/trivy-fixture"
@@ -113,10 +116,9 @@ test -e "$work/fresh/file"
 test ! -e "$temporary/ci-third/fixture-3/_work/stale"
 test -e "$temporary/ci-third/fixture-3/_work/fresh"
 test -e "$work/_actions/file"
-test ! -e "$work/.pnpm-store/old"
-test -e "$work/.pnpm-store/fresh"
-test ! -e "$temporary/ci/.cache/stale"
-test -e "$temporary/ci/.cache/fresh"
+test -e "$temporary/ci/.cache/uv/archive-v0/entry/py.typed"
+test -e "$work/.pnpm-store/old/stale"
+test -e "$temporary/ci/.npm/keep"
 test ! -e "$temporary/ci/_tool/trivy-fixture"
 test -e "$temporary/ci/_tool/trivy-new"
 test -e "$temporary/ci/_tool/node/keep"
@@ -138,7 +140,7 @@ grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
 ! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
 grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
 
-# Under pressure, busy runners still get the safe image prune and nothing else.
+# Under pressure, busy runners still get the safe image prune, and their caches stay.
 : > "$CALLS"
 JOB_STATUS=0 USED_PERCENT=80 bash "$temporary/cleanup"
 test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
@@ -146,10 +148,18 @@ test "$(grep -c 'docker.sock rmi base:v0$' "$CALLS")" -eq 3
 test "$(grep -c 'rmi app:sha-old$' "$CALLS")" -eq 3
 ! grep -q 'rmi base:v1\|rmi app:latest\|rmi app:sha-new' "$CALLS"
 ! grep -q 'container prune\|buildx prune\|nsenter' "$CALLS"
+test -e "$temporary/ci/.cache/uv/archive-v0/entry/py.typed"
+test -e "$work/.pnpm-store/old/stale"
+test -e "$temporary/ci/.npm/keep"
 
-# Above the pressure level, idle images go after an hour.
+# Above the pressure level, idle images go after an hour, and each idle runner's
+# package caches are dropped whole so entries can never hollow.
 : > "$CALLS"
 USED_PERCENT=80 bash "$temporary/cleanup"
 test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
+grep -q '^nsenter -U --preserve-credentials -t 4242 rm -rf --one-file-system ' "$CALLS"
+test ! -e "$work/.pnpm-store"
+test ! -e "$temporary/ci/.cache"
+test ! -e "$temporary/ci/.npm"
 grep -qx 'ci_data_used_percent 80' "$temporary/metrics/ci-disk.prom"
-echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, scoped cache pruning, age-based retention and cleanup metrics.'
+echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, wholesale cache reclaim under pressure, hollow-entry regression, age-based retention and cleanup metrics.'

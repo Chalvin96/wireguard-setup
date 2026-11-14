@@ -45,6 +45,7 @@
     shell: /bin/bash
     create_home: true
     home: /home/banagent
+    password_lock: true
     state: present
 
 - name: Create banagent .ssh directory

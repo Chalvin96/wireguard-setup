@@ -1,0 +1,9 @@
+---
+# Per runner: the baseline of three runners was ~20 GB each, of which build cache
+# was 5 GB and Trivy/tool/work directories another ~8 GB. Measured need was 2.0 GB.
+ci_build_cache_budget: 3GB
+ci_cache_retention_days: 7
+# Newest images kept per repository (builds add tags; base images stay warm). Above the
+# pressure level only the newest is kept, then anything idle for an hour goes.
+ci_images_kept_per_repository: 2
+ci_pressure_percent: 75

@@ -4,3 +4,24 @@ app_isolation_allowed_services: >-
   {{ tools_app_allowed_services | default([
        {'address': mikrotik_ip, 'protocol': 'udp', 'port': 53},
        {'address': mikrotik_ip, 'protocol': 'tcp', 'port': 53}]) }}
+
+# One entry per runner instance (a repo may set `instances: N` in the private
+# config). Every instance gets its own account, rootless Docker daemon and
+# network namespace so concurrent jobs cannot share ports, networks or
+# containers. The first instance keeps the original account.
+github_runner_instances: >-
+  {%- set out = [] -%}
+  {%- for repo in github_runner_repos | default([]) -%}
+  {%- for index in range(1, (repo.instances | default(1) | int) + 1) -%}
+  {%- set position = out | length + 1 -%}
+  {%- set suffix = '' if position == 1 else '-' ~ position -%}
+  {%- set _ = out.append({
+        'name': repo.repo if index == 1 else repo.repo ~ '-' ~ index,
+        'owner': repo.owner,
+        'repo': repo.repo,
+        'user': github_runner_user ~ suffix,
+        'home': github_runner_home ~ suffix,
+        'subuid': docker_ci_subuid | int + (position - 1) * 65536}) -%}
+  {%- endfor -%}
+  {%- endfor -%}
+  {{ out }}

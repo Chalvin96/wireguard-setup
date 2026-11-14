@@ -256,17 +256,19 @@ maintenance copy and verification; do not mount over live data.
   CI uses the idle-aware cleanup schedule.
 - **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
   `pg_dump` + assets archive into `/srv/backups/penpot`.
-- **github-runner** registers one runner per repository in
-  `github_runner_repos` using a fine-grained PAT from the vault.
+- **github-runner** registers runner instances per repository (`instances` in
+  `github_runner_repos`, default 1). Each instance has its own locked account,
+  rootless Docker daemon and network namespace, so parallel jobs cannot see each
+  other's containers, ports or caches. Registration uses a fine-grained PAT from
+  the vault.
 
 > **Private repositories only.** A self-hosted runner on a public repository
 > runs code from fork pull requests on this LAN. CI has its own rootless daemon
 > and cannot manage the applications daemon or read Penpot's private project
-> directory. Both runners and their containers share an aggregate CPU/memory
-> limit. This is not VM-strength isolation: the kernel, disk, and LAN remain
+> directory. Each runner instance has its own CPU/memory limit. This is not VM-strength isolation: the kernel, disk, and LAN remain
 > shared. Use a dedicated VM and network restrictions for untrusted workloads.
 
-See [rootless Docker operations and migration](docs/rootless-docker.md) before
+See [rootless Docker operations](docs/rootless-docker.md) before
 upgrading an existing rootful installation. Future trusted services can share
 the applications daemon with Penpot, using separate Compose projects and
 explicit shared networks only when communication is needed.
@@ -326,14 +328,14 @@ changes for secrets. Both versions are pinned. Encrypted vault files and runtime
 artifacts are excluded from formatting. Pre-commit manages the hook environments,
 so you do not need to install Prettier or Gitleaks globally for these hooks.
 
-Run `./run.sh lint` for Ansible checks, `bash tests/test-penpot-backup.sh` for backup
-failure handling, and `tofu -chdir=infra/proxmox validate` after `tofu init` for VM
-configuration. Formatting is also checked in GitHub Actions.
-
-Run the migration preflight and recovery regression checks without a target host:
+Run `./run.sh lint` for Ansible checks and `tofu -chdir=infra/proxmox validate`
+after `tofu init` for VM configuration. The behavioural tests run in GitHub
+Actions and locally without a target host:
 
 ```bash
-uv run --no-project --python 3.12 --with 'ansible-core>=2.17,<2.18' python tests/test_migration_recovery.py
+bash tests/test-ci-cleanup.sh      # CI cleanup: busy/error skips, thaw, retention
+bash tests/test-penpot-backup.sh   # failed archive leaves no published backup
+python tests/test_proxmox_health.py
 ```
 
 ## Repository Layout

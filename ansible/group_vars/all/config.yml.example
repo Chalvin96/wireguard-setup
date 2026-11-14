@@ -116,7 +116,7 @@ github_runner_version: "2.337.0"
 github_runner_sha256: "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
 github_runner_user: "github-runner"
 github_runner_home: "/var/lib/actions-runner" # bind mount from /srv/actions-runner
-github_runner_tool_cache: "{{ github_runner_home }}/_tool" # shared by both runners
+github_runner_tool_cache: "{{ github_runner_home }}/_tool"
 github_runner_node_versions: ["22.23.3", "24.21.0"] # seeded from nodejs.org with SHA-256 verification
 github_runner_labels:
   - self-hosted
@@ -127,3 +127,4 @@ github_runner_memory_max: "10G"
 github_runner_repos:
   - owner: "your-github-user"
     repo: "your-private-repo"
+    # instances: 2   # optional: parallel runners, each fully isolated

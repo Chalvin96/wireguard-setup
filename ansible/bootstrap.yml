@@ -19,6 +19,7 @@
         group: deploy
         shell: /bin/bash
         create_home: true
+        password_lock: true
         state: present
 
     - name: Create .ssh directory

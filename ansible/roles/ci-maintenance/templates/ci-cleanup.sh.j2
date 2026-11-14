@@ -1,19 +1,35 @@
 #!/bin/bash
 set -euo pipefail
 export PATH="${PATH:-/usr/bin:/bin}:/usr/sbin:/sbin"
+# Commands run as runner users must be able to return to the working directory.
+cd /
 
-ci_user={{ github_runner_user | quote }}
-ci_home={{ github_runner_home | quote }}
-ci_uid=$(id -u "$ci_user")
-runner_units=(
-{% for repo in github_runner_repos %}
-    {{ ('actions-runner@' ~ repo.repo ~ '.service') | quote }}
+# Every runner instance has its own account (user:home:name) and Docker daemon.
+ci_accounts=(
+{% for instance in github_runner_instances %}
+    {{ (instance.user ~ ':' ~ instance.home ~ ':' ~ instance.name) | quote }}
 {% endfor %}
 )
 frozen=()
+idle_accounts=()
 started=0
 exec 9>/run/lock/ci-cleanup.lock
 flock -n 9 || exit 0
+
+# Percentage used of the filesystem that holds the first runner's data.
+disk_used_percent() {
+    local home=${ci_accounts[0]#*:}
+    df --output=pcent "${home%%:*}" 2>/dev/null | tail -n 1 | tr -dc '0-9'
+}
+
+write_disk_metric() {
+    local used temporary=/var/lib/prometheus/node-exporter/ci-disk.tmp
+    used=$(disk_used_percent) || return 0
+    [[ -n "$used" ]] || return 0
+    printf 'ci_data_used_percent %s\n' "$used" > "$temporary"
+    chmod 0644 "$temporary"
+    mv "$temporary" /var/lib/prometheus/node-exporter/ci-disk.prom
+}
 
 finish() {
     status=$?
@@ -28,6 +44,7 @@ finish() {
         chmod 0644 "$temporary"
         mv "$temporary" /var/lib/prometheus/node-exporter/ci-cleanup.prom
     fi
+    write_disk_metric
     exit "$status"
 }
 trap finish EXIT
@@ -37,48 +54,123 @@ run_ci_docker() {
     runuser -u "$ci_user" -- docker --host "unix:///run/user/$ci_uid/docker.sock" "$@"
 }
 
-for unit in "${runner_units[@]}"; do
+# Filesystem cleanup runs inside the daemon's user namespace as the runner user:
+# it can remove files owned by container sub-UIDs but cannot follow a symlink
+# swapped in by a surviving container to anything outside that account's data.
+run_ci_ns() {
+    local pid
+    pid=$(cat "/run/user/$ci_uid/dockerd-rootless/child_pid")
+    runuser -u "$ci_user" -- nsenter -U --preserve-credentials -t "$pid" "$@"
+}
+
+# Remove all but the newest N unused images of each repository. Base images
+# (one tag per repository) stay cached, so jobs keep their warm pulls; only
+# superseded build tags go. `docker images` lists newest first, and an image in
+# use by a container is refused by rmi, which is deliberately not forced.
+keep_newest_images() {
+    local keep=$1 repository tag image_id
+    local -A count=() seen=()
+    while IFS=$'\t' read -r repository tag image_id; do
+        [[ "$repository" != '<none>' && "$tag" != '<none>' ]] || continue
+        [[ -z "${seen[$repository/$image_id]:-}" ]] || continue
+        seen[$repository/$image_id]=1
+        count[$repository]=$(( ${count[$repository]:-0} + 1 ))
+        (( ${count[$repository]} > keep )) || continue
+        run_ci_docker rmi "$repository:$tag" >/dev/null 2>&1 || true
+    done < <(run_ci_docker images --format '{{ '{{.Repository}}' }}\t{{ '{{.Tag}}' }}\t{{ '{{.ID}}' }}')
+}
+
+# Safe while jobs run. First keep only the newest image of each repository; only
+# if the disk is still under pressure, drop anything idle for over an hour.
+prune_under_pressure() {
+    local used
+    used=$(disk_used_percent) || used=0
+    (( ${used:-0} >= {{ ci_pressure_percent }} )) || return 0
+    echo "CI data is ${used}% full: keeping only the newest image per repository for $ci_name."
+    keep_newest_images 1
+    used=$(disk_used_percent) || used=0
+    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
+        run_ci_docker image prune --all --force --filter until=1h || echo "Pressure prune failed for $ci_name."
+    fi
+}
+
+select_account() {
+    IFS=: read -r ci_user ci_home ci_name <<< "$1"
+    ci_uid=$(id -u "$ci_user")
+}
+
+# A runner with an active job is left alone; the others are cleaned in the same run.
+for account in "${ci_accounts[@]}"; do
+    select_account "$account"
+    unit="actions-runner@${ci_name}.service"
     if systemctl is-active --quiet "$unit"; then
         frozen+=("$unit")
         systemctl freeze "$unit"
     fi
+    if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
+        echo "CI cleanup skipped for $ci_name: a job is active."
+        systemctl thaw "$unit" || true
+        prune_under_pressure
+    else
+        result=$?
+        (( result == 1 )) || exit "$result"
+        idle_accounts+=("$account")
+    fi
 done
-if pgrep -u "$ci_uid" -x Runner.Worker >/dev/null; then
-    echo 'CI cleanup skipped: a job is active.'
+if [[ -z "${idle_accounts[*]:-}" ]]; then
     exit 0
-else
-    result=$?
-    (( result == 1 )) || exit "$result"
 fi
 started=1
 
-run_ci_docker container prune --force
-run_ci_docker volume prune --force
-volumes=$(run_ci_docker volume ls --filter dangling=true --format '{{ '{{.Name}}' }}')
-while IFS= read -r volume; do
-    case "$volume" in
-        buildx_buildkit_*_state) run_ci_docker volume rm "$volume" ;;
-    esac
-done <<< "$volumes"
+for account in "${idle_accounts[@]}"; do
+    select_account "$account"
+    run_ci_docker container prune --force
+    run_ci_docker volume prune --force
+    volumes=$(run_ci_docker volume ls --filter dangling=true --format '{{ '{{.Name}}' }}')
+    while IFS= read -r volume; do
+        case "$volume" in
+            buildx_buildkit_*_state) run_ci_docker volume rm "$volume" ;;
+        esac
+    done <<< "$volumes"
 
-run_ci_docker image prune --all --force
-run_ci_docker buildx prune --builder default --force --max-used-space 2GB
-builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
-    python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
-while IFS= read -r builder; do
-    [[ -n "$builder" ]] || continue
-    run_ci_docker buildx prune --builder "$builder" --force --max-used-space 2GB
-done <<< "$builders"
+    run_ci_docker image prune --force
+    keep_newest_images {{ ci_images_kept_per_repository }}
+    prune_under_pressure
+    run_ci_docker buildx prune --builder default --force --max-used-space {{ ci_build_cache_budget }}
+    builders=$(run_ci_docker buildx ls --format '{{ '{{json .}}' }}' |
+        python3 -c 'import json, sys; rows = (json.loads(line) for line in sys.stdin if line.strip()); print("\n".join(sorted({row["Name"] for row in rows if row["Driver"] == "docker-container"})))')
+    while IFS= read -r builder; do
+        [[ -n "$builder" ]] || continue
+        run_ci_docker buildx prune --builder "$builder" --force --max-used-space {{ ci_build_cache_budget }}
+    done <<< "$builders"
 
-used=$(df -B1 --output=used /srv | tail -1)
-if (( used > 25000000000 )); then
-{% for repo in github_runner_repos %}
-    rm -rf --one-file-system -- {{ (github_runner_home ~ '/' ~ repo.repo ~ '/_work') | quote }}
-{% endfor %}
-    rm -rf --one-file-system -- "$ci_home/.cache" "$ci_home/.local/share/pnpm/store"
+    retention={{ ci_cache_retention_days }}
+    # Package caches (uv archive entries, npm/pnpm stores) are content-addressed
+    # stores whose entries tools treat as atomic. Deleting individual files (an
+    # unread py.typed marker, an empty __init__.py nothing imported) leaves the
+    # entry in place, so later installs link hollow trees and mypy quietly loses
+    # py.typed markers. Reclaim them wholesale, only under disk pressure; every
+    # one of these caches rebuilds itself on the next job.
+    cache_dirs=(
+        "$ci_home/$ci_name/_work/.pnpm-store"
+        "$ci_home/.cache" "$ci_home/.npm" "$ci_home/.local/share/pnpm/store"
+    )
+    used=$(disk_used_percent) || used=0
+    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
+        echo "CI data is ${used}% full: dropping package caches for $ci_name (they rebuild)."
+        for dir in "${cache_dirs[@]}"; do
+            [[ -d "$dir" ]] || continue
+            run_ci_ns rm -rf --one-file-system "$dir"
+        done
+    fi
+    work="$ci_home/$ci_name/_work"
+    if [[ -d "$work" ]]; then
+        run_ci_ns find "$work" -xdev -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' \
+            -mtime "+$retention" -exec rm -rf --one-file-system -- {} +
+    fi
     if [[ -d "$ci_home/_tool" ]]; then
-        find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' \
+        run_ci_ns find "$ci_home/_tool" -mindepth 1 -maxdepth 1 -type d -name 'trivy-*' -mtime "+$retention" \
             -exec rm -rf --one-file-system -- {} +
     fi
-fi
-df -h /srv
+done
+df -h "$ci_home"

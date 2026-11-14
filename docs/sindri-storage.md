@@ -1,7 +1,7 @@
 # CI storage and Penpot monitoring
 
 Keep CI workspaces, Docker layers and Buildx volumes on a separate filesystem
-from Penpot data. Bound build caches, remove dangling CI images, and remove each
+from Penpot data. Bound build caches, remove unused CI images, and remove each
 disposable test stack's volumes during teardown. Apply cleanup to every retained
 Buildx builder; pruning the default builder does not cover separate builders.
 Do not prune application volumes.
@@ -28,11 +28,16 @@ ansible-playbook ansible/sindri-monitoring.yml --vault-password-file .vault_pass
 Idle CI cleanup runs every thirty minutes from `/etc/cron.d/ci-cleanup`. It freezes
 idle runner listeners, skips active jobs, and resumes listeners on success or
 failure. Cleanup targets the CI daemon only: disposable anonymous volumes,
-detached BuildKit cache volumes, stopped containers, dangling images, and a 5 GB
-cache budget per builder (measured use: 2 GB). Tagged images are kept between jobs.
-Dependency caches, stale workspaces and Trivy tools unused for 14 days are removed;
-total `/srv` usage never triggers deletion. Capacity is watched by the 90/100 GB
-alerts. Application data and backups are excluded.
+detached BuildKit cache volumes, stopped containers, dangling images, and a 3 GB
+cache budget per builder. Per repository the two newest image tags are kept; older
+tags are removed. Workspaces under `_work` and `trivy-*` tool directories unused
+for 7 days are removed. Dependency caches (`~/.cache`, `~/.npm`, the pnpm stores)
+are never trimmed file by file; at 75% disk use or more, each idle runner's caches
+are removed whole and rebuild on the next job. At 75% or more, image pruning also
+runs on runners with an active job: only the newest image per repository is kept,
+then, if usage is still high, images idle for over an hour are pruned. Capacity is
+watched by the 85% `ci_data_used_percent` alert. Application data and backups are
+excluded.
 Cleanup failures and samples older than six hours are monitored.
 
 Deploy cleanup, host swap preference and alert updates with:

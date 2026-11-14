@@ -24,6 +24,8 @@
   notify: Restart CI runners
 
 # A restarted daemon gets a new network namespace; runners must rejoin it.
+# Only the runners whose own daemon restarted rejoin: restarting the apps
+# (Penpot) daemon must not cancel jobs on unrelated runners.
 # try-restart leaves stopped runners stopped, which the systemd module cannot express.
 - name: Restart CI runners
   ansible.builtin.command: "systemctl try-restart actions-runner@{{ item.name }}.service" # noqa: command-instead-of-module
@@ -32,4 +34,8 @@
     label: "{{ item.name }}"
   changed_when: false
   failed_when: false
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - >-
+      item.user in (((docker_daemon_config.results | default([])) + (docker_ci_network.results | default([])))
+      | selectattr('changed') | map(attribute='item.name') | list)

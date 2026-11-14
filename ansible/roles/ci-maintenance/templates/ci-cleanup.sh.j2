@@ -145,14 +145,24 @@ for account in "${idle_accounts[@]}"; do
     done <<< "$builders"
 
     retention={{ ci_cache_retention_days }}
+    # Package caches (uv archive entries, npm/pnpm stores) are content-addressed
+    # stores whose entries tools treat as atomic. Deleting individual files (an
+    # unread py.typed marker, an empty __init__.py nothing imported) leaves the
+    # entry in place, so later installs link hollow trees and mypy quietly loses
+    # py.typed markers. Reclaim them wholesale, only under disk pressure; every
+    # one of these caches rebuilds itself on the next job.
     cache_dirs=(
         "$ci_home/$ci_name/_work/.pnpm-store"
         "$ci_home/.cache" "$ci_home/.npm" "$ci_home/.local/share/pnpm/store"
     )
-    for dir in "${cache_dirs[@]}"; do
-        [[ -d "$dir" ]] || continue
-        run_ci_ns find "$dir" -xdev -mindepth 1 \( -type f -atime "+$retention" -o -type d -empty \) -delete
-    done
+    used=$(disk_used_percent) || used=0
+    if (( ${used:-0} >= {{ ci_pressure_percent }} )); then
+        echo "CI data is ${used}% full: dropping package caches for $ci_name (they rebuild)."
+        for dir in "${cache_dirs[@]}"; do
+            [[ -d "$dir" ]] || continue
+            run_ci_ns rm -rf --one-file-system "$dir"
+        done
+    fi
     work="$ci_home/$ci_name/_work"
     if [[ -d "$work" ]]; then
         run_ci_ns find "$work" -xdev -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name '.*' \

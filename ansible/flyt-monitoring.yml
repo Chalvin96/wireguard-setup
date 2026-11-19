@@ -1,0 +1,9 @@
+---
+- name: Add Flyt alerts to the existing monitoring stack
+  hosts: monitoring
+  become: true
+  tasks:
+    - name: Apply shared alert provisioning
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: alerting

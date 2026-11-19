@@ -281,8 +281,9 @@ monitoring_sindri_alerts:
     expression: time() - sindri_health_last_run_timestamp_seconds{job="sindri"}
 
 # Flyt API and contextual word linking (Jev). Spend is capped by the OpenRouter
-# key's credit limit; when it is hit, Jev requests fail and the error-rate and
-# fallback alerts fire. Contextual metrics report no data until deployed (OK).
+# key's credit limit. A failed Jev request fails the annotation job, which
+# retries for about 4 h; the failing and exhausted alerts cover that. Contextual
+# metrics report no data until deployed (OK).
 monitoring_flyt_alerts:
   - uid: flyt-metrics-down
     no_data: Alerting
@@ -314,12 +315,19 @@ monitoring_flyt_alerts:
     expression:
       100 * sum(rate(flyt_contextual_requests_total{outcome=~"error|timeout"}[5m]))
       / clamp_min(sum(rate(flyt_contextual_requests_total{outcome=~"ok|error|timeout"}[5m])), 0.001)
-  - uid: flyt-jev-fallback-rate
-    title: Flyt pages falling back to first-match links above 20 percent
-    threshold: 20
-    duration: 5m
+  - uid: flyt-annotation-exhausted
+    title: Flyt story annotation gave up after all retries
+    threshold: 0
+    duration: 0m
+    severity: critical
+    measurement: !unsafe '{{ printf "%.0f" $values.A.Value }} annotation job(s) exhausted retries in the last hour.'
+    action: Check OpenRouter credit and status, then re-enqueue the story (see Flyt runtime docs).
+    expression: sum(increase(flyt_contextual_annotation_exhausted_total{job="flyt"}[1h]))
+  - uid: flyt-annotation-failing
+    title: Flyt story annotation keeps failing
+    threshold: 3
+    duration: 15m
     severity: warning
-    measurement: !unsafe 'Fallback: {{ printf "%.0f" $values.A.Value }}% of pages in 30 min (limit 20%).'
-    action: Check the fallback reason (error) on the Flyt metrics.
-    expression: 100 * sum(increase(flyt_contextual_fallback_pages_total[30m]))
-      / clamp_min(sum(increase(flyt_contextual_page_seconds_count[30m])), 1)
+    measurement: !unsafe '{{ printf "%.0f" $values.A.Value }} failed attempts in 30 min; jobs are retrying.'
+    action: Check OpenRouter credit (402) and status; jobs retry automatically for about 4 h.
+    expression: sum(increase(flyt_contextual_annotation_failures_total{job="flyt"}[30m]))

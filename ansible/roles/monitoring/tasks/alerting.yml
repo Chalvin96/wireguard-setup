@@ -64,6 +64,7 @@
       - flyt-jev-budget-warning
       - flyt-jev-budget-exhausted
       - flyt-jev-breaker-errors
+      - flyt-jev-fallback-rate
   notify: Reload Grafana alerting
 
 - name: Route Grafana alerts to the Discord contact point

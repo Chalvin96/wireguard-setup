@@ -90,7 +90,7 @@
     },
     {
       "id": 7,
-      "title": "Fallback pages by reason (1h)",
+      "title": "Annotation failures by reason (1h)",
       "type": "timeseries",
       "gridPos": {
         "h": 7,
@@ -111,14 +111,15 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (reason) (increase(flyt_contextual_fallback_pages_total{job=\"flyt\"}[1h]))",
+          "datasource": null,
+          "expr": "sum by (reason) (increase(flyt_contextual_annotation_failures_total{job=\"flyt\"}[1h]))",
           "legendFormat": "{{reason}}"
         }
       ]
     },
     {
       "id": 8,
-      "title": "Fallback ratio (30m)",
+      "title": "Annotations exhausted (24h)",
       "type": "stat",
       "gridPos": {
         "h": 7,
@@ -132,15 +133,15 @@
       },
       "fieldConfig": {
         "defaults": {
-          "noValue": "No data",
-          "unit": "percentunit"
+          "noValue": "No data"
         }
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(flyt_contextual_fallback_pages_total{job=\"flyt\"}[30m])) / clamp_min(sum(increase(flyt_contextual_page_seconds_count{job=\"flyt\"}[30m])), 1)",
-          "instant": true
+          "datasource": null,
+          "expr": "sum(increase(flyt_contextual_annotation_exhausted_total{job=\"flyt\"}[24h]))",
+          "legendFormat": "exhausted"
         }
       ]
     },

@@ -111,6 +111,9 @@
     dest: /opt/monitoring/grafana/provisioning/dashboards/tools-dashboard.json
     mode: "0644"
 
+- name: Install the Flyt dashboard
+  ansible.builtin.import_tasks: flyt.yml
+
 - name: Configure Grafana alerts and notifications
   ansible.builtin.import_tasks: alerting.yml
 

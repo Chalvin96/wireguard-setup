@@ -1,0 +1,6 @@
+---
+- name: Copy Grafana Flyt dashboard
+  ansible.builtin.copy:
+    src: grafana/provisioning/dashboards/flyt-dashboard.json
+    dest: /opt/monitoring/grafana/provisioning/dashboards/flyt-dashboard.json
+    mode: "0644"

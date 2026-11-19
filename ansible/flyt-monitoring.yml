@@ -1,5 +1,5 @@
 ---
-- name: Add Flyt alerts to the existing monitoring stack
+- name: Add Flyt alerts and dashboard to the existing monitoring stack
   hosts: monitoring
   become: true
   tasks:
@@ -7,3 +7,8 @@
       ansible.builtin.import_role:
         name: monitoring
         tasks_from: alerting
+
+    - name: Apply Flyt dashboard provisioning
+      ansible.builtin.import_role:
+        name: monitoring
+        tasks_from: flyt

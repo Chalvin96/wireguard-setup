@@ -344,6 +344,6 @@ monitoring_flyt_alerts:
     duration: 5m
     severity: warning
     measurement: !unsafe 'Fallback: {{ printf "%.0f" $values.A.Value }}% of pages in 30 min (limit 20%).'
-    action: Check the fallback reason (budget, breaker, cap_timeout, error) on the Flyt metrics.
+    action: Check the fallback reason (budget, breaker, error) on the Flyt metrics.
     expression: 100 * sum(increase(flyt_contextual_fallback_pages_total[30m]))
       / clamp_min(sum(increase(flyt_contextual_page_seconds_count[30m])), 1)

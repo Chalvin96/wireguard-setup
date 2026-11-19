@@ -280,8 +280,9 @@ monitoring_sindri_alerts:
     action: Check the Penpot health collector timer.
     expression: time() - sindri_health_last_run_timestamp_seconds{job="sindri"}
 
-# Flyt API and contextual word linking (Jev). The contextual metrics appear once
-# the safeguards are deployed; until then they report no data, which is OK.
+# Flyt API and contextual word linking (Jev). Spend is capped by the OpenRouter
+# key's credit limit; when it is hit, Jev requests fail and the error-rate and
+# fallback alerts fire. Contextual metrics report no data until deployed (OK).
 monitoring_flyt_alerts:
   - uid: flyt-metrics-down
     no_data: Alerting
@@ -303,31 +304,6 @@ monitoring_flyt_alerts:
     expression:
       100 * sum(rate(http_requests_total{job="flyt",status="5xx"}[5m]))
       / clamp_min(sum(rate(http_requests_total{job="flyt"}[5m])), 0.001)
-  - uid: flyt-jev-budget-warning
-    title: Flyt word linking spent 80 percent of the daily budget
-    operator: ">="
-    threshold: 80
-    duration: 1m
-    severity: warning
-    measurement: !unsafe 'Spent: {{ printf "%.0f" $values.A.Value }}% of today''s budget.'
-    action: Check annotation volume; raise READING_CONTEXTUAL_LINKING_DAILY_BUDGET_USD if expected.
-    expression: 100 * max(flyt_contextual_spend_usd_today) / max(flyt_contextual_budget_usd > 0)
-  - uid: flyt-jev-budget-exhausted
-    title: Flyt word linking budget exhausted
-    threshold: 0
-    duration: 1m
-    severity: critical
-    measurement: "Contextual linking is off until 00:00 UTC; pages use first-match links."
-    action: Check for an annotation loop or re-import; re-annotate fallback pages later.
-    expression: max(flyt_contextual_breaker_open{reason="budget"})
-  - uid: flyt-jev-breaker-errors
-    title: Flyt word linking circuit breaker open
-    threshold: 0
-    duration: 5m
-    severity: critical
-    measurement: "Jev calls failing; pages use first-match links."
-    action: Check OpenRouter status and the worker logs for systemone errors.
-    expression: max(flyt_contextual_breaker_open{reason="errors"})
   - uid: flyt-jev-error-rate
     title: Flyt word linking request errors above 10 percent
     threshold: 10
@@ -344,6 +320,6 @@ monitoring_flyt_alerts:
     duration: 5m
     severity: warning
     measurement: !unsafe 'Fallback: {{ printf "%.0f" $values.A.Value }}% of pages in 30 min (limit 20%).'
-    action: Check the fallback reason (budget, breaker, error) on the Flyt metrics.
+    action: Check the fallback reason (error) on the Flyt metrics.
     expression: 100 * sum(increase(flyt_contextual_fallback_pages_total[30m]))
       / clamp_min(sum(increase(flyt_contextual_page_seconds_count[30m])), 1)

@@ -21,6 +21,8 @@ source = source.replace('/var/lib/prometheus/node-exporter', str(temporary / 'me
         {'name': 'fixture', 'user': 'ci-fixture', 'home': str(temporary / 'ci')},
         {'name': 'no-work', 'user': 'ci-second', 'home': str(temporary / 'ci-second')},
         {'name': 'fixture-3', 'user': 'ci-third', 'home': str(temporary / 'ci-third')},
+        # Decommissioned before the role was re-applied: its account is gone.
+        {'name': 'gone', 'user': 'ci-gone', 'home': str(temporary / 'ci-gone')},
     ],
     ci_build_cache_budget='5GB', ci_cache_retention_days=14,
     ci_images_kept_per_repository=2, ci_pressure_percent=75))
@@ -34,6 +36,7 @@ cat > "$temporary/bin/id" <<'EOF'
 case "$*" in
     *ci-second) echo 998 ;;
     *ci-third) echo 997 ;;
+    *ci-gone) echo "id: 'ci-gone': no such user" >&2; exit 1 ;;
     *) echo 999 ;;
 esac
 EOF
@@ -139,6 +142,7 @@ grep -q '^systemctl thaw ' "$CALLS"
 grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
 ! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
 grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
+! grep -q 'ci-gone\|actions-runner@gone' "$CALLS"
 
 # Under pressure, busy runners still get the safe image prune, and their caches stay.
 : > "$CALLS"
@@ -162,4 +166,4 @@ test ! -e "$work/.pnpm-store"
 test ! -e "$temporary/ci/.cache"
 test ! -e "$temporary/ci/.npm"
 grep -qx 'ci_data_used_percent 80' "$temporary/metrics/ci-disk.prom"
-echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, wholesale cache reclaim under pressure, hollow-entry regression, age-based retention and cleanup metrics.'
+echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, wholesale cache reclaim under pressure, hollow-entry regression, missing-account skip, age-based retention and cleanup metrics.'

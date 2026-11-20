@@ -101,6 +101,11 @@ select_account() {
 
 # A runner with an active job is left alone; the others are cleaned in the same run.
 for account in "${ci_accounts[@]}"; do
+    # A decommissioned instance can still be listed until this role is re-applied.
+    if ! id -u "${account%%:*}" >/dev/null 2>&1; then
+        echo "CI cleanup skipped for $account: the account no longer exists."
+        continue
+    fi
     select_account "$account"
     unit="actions-runner@${ci_name}.service"
     if systemctl is-active --quiet "$unit"; then

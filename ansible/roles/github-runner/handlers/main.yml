@@ -2,3 +2,11 @@
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
+
+# Runners require docker.service, so systemd restarts them with it.
+- name: Restart CI Docker
+  ansible.builtin.systemd:
+    name: docker.service
+    state: restarted
+    daemon_reload: true
+  when: not ansible_check_mode

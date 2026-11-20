@@ -247,29 +247,27 @@ Create separate boot and service-data storage before deployment. Mount the
 service-data filesystem at `/srv` using a UUID in fstab; the roles assume it is
 already mounted. Choose storage sizes for the workload.
 
-Bind the Docker and runner `/var/lib` directories from `/srv` as described in
+Bind the apps and runner `/var/lib` directories from `/srv` as described in
 [the storage procedure](docs/rootless-docker.md). Existing hosts require a
 maintenance copy and verification; do not mount over live data.
 
-- **docker** installs separate rootless Docker daemons for applications (`apps`)
-  and CI (`github-runner`), both with log rotation. Apps use weekly pruning;
-  CI uses the idle-aware cleanup schedule.
+- **docker** installs Docker and a rootless daemon for applications (`apps`),
+  with log rotation and weekly pruning.
 - **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
   `pg_dump` + assets archive into `/srv/backups/penpot`.
-- **github-runner** registers runner instances per repository (`instances` in
-  `github_runner_repos`, default 1). Each instance has its own locked account,
-  rootless Docker daemon and network namespace, so parallel jobs cannot see each
-  other's containers, ports or caches. Registration uses a fine-grained PAT from
-  the vault.
+- **github-runner** configures the rootful Docker daemon for CI and registers
+  one root runner per repository in `github_runner_repos`. Runners and CI
+  containers share the `ci.slice` CPU/memory limits. Registration uses a
+  fine-grained PAT from the vault.
+- **ci-maintenance** prunes the CI daemon hourly while no job runs.
 
 > **Private repositories only.** A self-hosted runner on a public repository
-> runs code from fork pull requests on this LAN. CI has its own rootless daemon
-> and cannot manage the applications daemon or read Penpot's private project
-> directory. Each runner instance has its own CPU/memory limit. This is not VM-strength isolation: the kernel, disk, and LAN remain
-> shared. Use a dedicated VM and network restrictions for untrusted workloads.
+> runs code from fork pull requests on this LAN. CI jobs are effectively root on
+> the tools host, including over Penpot's data; LAN access to CI containers is
+> blocked, but nothing else is isolated. Use a dedicated VM for untrusted
+> workloads.
 
-See [rootless Docker operations](docs/rootless-docker.md) before
-upgrading an existing rootful installation. Future trusted services can share
+See [Docker operations](docs/rootless-docker.md) for both daemons. Future trusted services can share
 the applications daemon with Penpot, using separate Compose projects and
 explicit shared networks only when communication is needed.
 
@@ -364,9 +362,9 @@ roles/
 ├── promtail/            # edge-01: log shipping to Loki
 ├── notify/              # edge-01: Mailrise SMTP → Apprise → Discord (LAN only)
 ├── monitoring/          # monitoring-01: Docker Compose observability stack
-├── docker/              # tools-01: rootless Docker and apps-only weekly prune
+├── docker/              # tools-01: Docker, rootless apps daemon + weekly prune
 ├── penpot/              # tools-01: Penpot stack + nightly backup timer
-└── github-runner/       # tools-01: per-repository Actions runners (private repos only)
+└── github-runner/       # tools-01: rootful CI daemon + root runners (private repos only)
 ```
 
 ## Vault Variables

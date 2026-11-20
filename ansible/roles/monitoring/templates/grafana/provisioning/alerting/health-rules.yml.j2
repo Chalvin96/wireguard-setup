@@ -46,3 +46,10 @@ groups:
           severity: {{ alert.severity }}
         isPaused: false
 {% endfor %}
+{% if health_alert_deleted_uids | default([]) %}
+deleteRules:
+{% for uid in health_alert_deleted_uids %}
+  - orgId: 1
+    uid: {{ uid }}
+{% endfor %}
+{% endif %}

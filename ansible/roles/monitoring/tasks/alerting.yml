@@ -49,6 +49,24 @@
     health_alert_no_data: Alerting
   notify: Reload Grafana alerting
 
+- name: Write Flyt API and word-linking alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/health-rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/flyt.yml
+    mode: "0644"
+  vars:
+    health_alert_group: flyt-health
+    health_alerts: "{{ monitoring_flyt_alerts }}"
+    health_alert_labels: { service: flyt }
+    health_alert_no_data: OK
+    # Rules removed from the file stay in Grafana unless deleted explicitly.
+    health_alert_deleted_uids:
+      - flyt-jev-budget-warning
+      - flyt-jev-budget-exhausted
+      - flyt-jev-breaker-errors
+      - flyt-jev-fallback-rate
+  notify: Reload Grafana alerting
+
 - name: Route Grafana alerts to the Discord contact point
   ansible.builtin.copy:
     src: grafana/provisioning/alerting/policies.yml

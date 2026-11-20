@@ -1,0 +1,7 @@
+# Managed by Ansible — runners and every CI container share these limits.
+[Unit]
+Description=GitHub Actions runners and CI containers
+
+[Slice]
+CPUQuota={{ github_runner_slice_cpu_quota }}
+MemoryMax={{ github_runner_slice_memory_max }}

@@ -267,7 +267,7 @@ monitoring_sindri_alerts:
     measurement:
       !unsafe 'CI data volume: {{ printf "%.0f" $values.A.Value }}% used (limit
       85%).'
-    action: Check the ci-cleanup journal and per-runner Docker usage.
+    action: Check the ci-cleanup journal and CI Docker usage (docker system df).
     expression: ci_data_used_percent{job="sindri"}
   - uid: sindri-health-stale
     title: Sindri Penpot health collector overdue

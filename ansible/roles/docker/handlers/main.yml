@@ -3,39 +3,15 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-# Only daemons whose own configuration changed are restarted.
-- name: Restart rootless daemons
+- name: Restart apps daemon
   ansible.builtin.systemd:
     scope: user
     name: docker
     state: restarted
     daemon_reload: true
   become: true
-  become_user: "{{ item.name }}"
+  become_user: "{{ docker_apps_user }}"
   environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item.name][1] }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item.name][1] }}/bus"
-  loop: >-
-    {{ ((docker_daemon_config.results | default([])) + (docker_ci_network.results | default([])))
-       | selectattr('changed') | map(attribute='item') | unique | list }}
-  loop_control:
-    label: "{{ item.name }}"
+    XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[docker_apps_user][1] }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[docker_apps_user][1] }}/bus"
   when: not ansible_check_mode
-  notify: Restart CI runners
-
-# A restarted daemon gets a new network namespace; runners must rejoin it.
-# Only the runners whose own daemon restarted rejoin: restarting the apps
-# (Penpot) daemon must not cancel jobs on unrelated runners.
-# try-restart leaves stopped runners stopped, which the systemd module cannot express.
-- name: Restart CI runners
-  ansible.builtin.command: "systemctl try-restart actions-runner@{{ item.name }}.service" # noqa: command-instead-of-module
-  loop: "{{ github_runner_instances | default([]) }}"
-  loop_control:
-    label: "{{ item.name }}"
-  changed_when: false
-  failed_when: false
-  when:
-    - not ansible_check_mode
-    - >-
-      item.user in (((docker_daemon_config.results | default([])) + (docker_ci_network.results | default([])))
-      | selectattr('changed') | map(attribute='item.name') | list)

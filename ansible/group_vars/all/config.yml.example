@@ -94,9 +94,6 @@ docker_prune_image_age: "168h" # unused images older than this are removed
 docker_apps_user: "apps" # shared daemon for Penpot and future trusted applications
 docker_apps_home: "/var/lib/apps" # bind mount from /srv/apps
 docker_apps_subuid: 231072 # 65,536 subordinate UIDs/GIDs; must not overlap existing ranges
-docker_ci_subuid: 296608 # CI has a separate mapping and daemon
-docker_ci_cpu_quota: "300%" # aggregate: both runners AND their containers
-docker_ci_memory_max: "4G"
 
 # Tools host: Penpot
 penpot_version: "2.15.4"
@@ -114,17 +111,16 @@ penpot_backup_alert_recipient: "alerts@mailrise.lan"
 # Tools host: GitHub Actions runners (PRIVATE repositories only)
 github_runner_version: "2.337.0"
 github_runner_sha256: "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
-github_runner_user: "github-runner"
-github_runner_home: "/var/lib/actions-runner" # bind mount from /srv/actions-runner
+github_runner_home: "/var/lib/actions-runner" # bind mount from /srv/actions-runner; root-owned, shared by all runners
+github_runner_docker_data_root: "{{ github_runner_home }}/docker" # rootful CI daemon's data-root
 github_runner_tool_cache: "{{ github_runner_home }}/_tool"
 github_runner_node_versions: ["22.23.3", "24.21.0"] # seeded from nodejs.org with SHA-256 verification
 github_runner_labels:
   - self-hosted
   - linux
   - ci
-github_runner_cpu_quota: "400%" # 4 cores for processes the runner spawns directly
-github_runner_memory_max: "10G"
+github_runner_slice_cpu_quota: "500%" # ci.slice: all runners AND their containers together
+github_runner_slice_memory_max: "11G"
 github_runner_repos:
   - owner: "your-github-user"
-    repo: "your-private-repo"
-    # instances: 2   # optional: parallel runners, each fully isolated
+    repo: "your-private-repo" # one root runner per repository

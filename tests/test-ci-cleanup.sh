@@ -3,7 +3,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
-mkdir -p "$temporary/ci/no-work" "$temporary/ci-second/no-work" "$temporary/ci-third/fixture-3/_work" "$temporary/bin" "$temporary/metrics" "$temporary/ci/fixture/_work"
+mkdir -p "$temporary/bin" "$temporary/metrics"
 python3 - "$repo_root" "$temporary" <<'PY'
 import shlex
 import sys
@@ -14,156 +14,51 @@ environment = Environment(trim_blocks=True)
 environment.filters['quote'] = shlex.quote
 source = (root / 'ansible/roles/ci-maintenance/templates/ci-cleanup.sh.j2').read_text()
 source = source.replace('/run/lock/ci-cleanup.lock', str(temporary / 'lock'))
-source = source.replace('"/run/user/$ci_uid/dockerd-rootless/child_pid"', '"' + str(temporary / 'child_pid') + '"')
 source = source.replace('/var/lib/prometheus/node-exporter', str(temporary / 'metrics'))
-(temporary / 'cleanup').write_text(environment.from_string(source).render(
-    github_runner_instances=[
-        {'name': 'fixture', 'user': 'ci-fixture', 'home': str(temporary / 'ci')},
-        {'name': 'no-work', 'user': 'ci-second', 'home': str(temporary / 'ci-second')},
-        {'name': 'fixture-3', 'user': 'ci-third', 'home': str(temporary / 'ci-third')},
-        # Decommissioned before the role was re-applied: its account is gone.
-        {'name': 'gone', 'user': 'ci-gone', 'home': str(temporary / 'ci-gone')},
-    ],
-    ci_build_cache_budget='5GB', ci_cache_retention_days=14,
-    ci_images_kept_per_repository=2, ci_pressure_percent=75))
+(temporary / 'cleanup').write_text(environment.from_string(source).render(github_runner_home='/ci home'))
 PY
-cat > "$temporary/bin/systemctl" <<'EOF'
+cat > "$temporary/bin/docker" <<'EOF2'
 #!/bin/bash
-echo "systemctl $*" >> "$CALLS"
-EOF
-cat > "$temporary/bin/id" <<'EOF'
+echo "docker $*" >> "$CALLS"
+[[ "$*" != *"${FAIL_ON:-never}"* ]]
+EOF2
+cat > "$temporary/bin/pgrep" <<'EOF2'
 #!/bin/bash
-case "$*" in
-    *ci-second) echo 998 ;;
-    *ci-third) echo 997 ;;
-    *ci-gone) echo "id: 'ci-gone': no such user" >&2; exit 1 ;;
-    *) echo 999 ;;
-esac
-EOF
-cat > "$temporary/bin/pgrep" <<'EOF'
-#!/bin/bash
-if [[ -n "${BUSY_UID:-}" ]]; then
-    [[ " $* " == *" -u $BUSY_UID "* ]] && exit 0
-    exit 1
-fi
+[[ "$*" == '-x Runner.Worker' ]] || exit 2
 exit "${JOB_STATUS:-1}"
-EOF
-cat > "$temporary/bin/df" <<'EOF'
+EOF2
+cat > "$temporary/bin/df" <<'EOF2'
 #!/bin/bash
-printf 'Use%%\n %s%%\n' "${USED_PERCENT:-40}"
-EOF
-echo 4242 > "$temporary/child_pid"
-cat > "$temporary/bin/nsenter" <<'EOF'
-#!/bin/bash
-echo "nsenter $*" >> "$CALLS"
-while [[ "$1" != -t ]]; do shift; done
-shift 2
-exec "$@"
-EOF
-cat > "$temporary/bin/runuser" <<'EOF'
-#!/bin/bash
-echo "runuser $*" >> "$CALLS"
-case "$*" in *' -- nsenter '*) shift 3; exec "$@" ;; esac
-if [[ "${DOCKER_FAIL:-0}" == 1 ]]; then exit 17; fi
-case "$*" in
-    *'volume ls '*) printf 'buildx_buildkit_old_state\nkeep-named-data\n' ;;
-    *' images --format'*) printf 'app\tsha-new\tid1\napp\tlatest\tid1\napp\tsha-old\tid2\napp\tsha-older\tid3\nbase\tv1\tid4\nbase\tv0\tid5\n<none>\t<none>\tid6\n' ;;
-    *'buildx ls '*) printf '{"Name":"default","Driver":"docker"}\n{"Name":"rootless","Driver":"docker"}\n{"Name":"persistent","Driver":"docker-container"}\n{"Name":"persistent","Driver":"docker-container"}\n' ;;
-esac
-EOF
+[[ "$*" == '--output=pcent /ci home' ]] || exit 2
+printf 'Use%%\n 42%%\n'
+EOF2
 chmod +x "$temporary/bin/"*
 export PATH="$temporary/bin:$PATH" CALLS="$temporary/calls"
-path_setup=$(sed -n '/^export PATH=/p' "$temporary/cleanup")
-env -i PATH=/usr/bin:/bin bash -c "$path_setup; command -v runuser" >/dev/null
+metric() { grep -qx "$1" "$temporary/metrics/$2.prom"; }
 
+# Busy: no prune calls, metrics still written.
+: > "$CALLS"
 JOB_STATUS=0 bash "$temporary/cleanup"
-grep -q '^systemctl freeze ' "$CALLS"
-grep -q '^systemctl thaw ' "$CALLS"
-! grep -q '^runuser ' "$CALLS"
+test ! -s "$CALLS"
+metric 'ci_cleanup_success 1' ci-cleanup
+grep -q '^ci_cleanup_last_run_timestamp_seconds [0-9]\+$' "$temporary/metrics/ci-cleanup.prom"
+metric 'ci_data_used_percent 42' ci-disk
 
-# A job on one instance's account skips only that instance.
+# Idle: exactly the four prunes.
 : > "$CALLS"
-BUSY_UID=997 bash "$temporary/cleanup"
-grep -q '^systemctl thaw ' "$CALLS"
-! grep -q 'user/997/docker.sock' "$CALLS"
-grep -q 'user/999/docker.sock' "$CALLS"
-grep -q 'user/998/docker.sock' "$CALLS"
+bash "$temporary/cleanup"
+diff - "$CALLS" <<'EOF2'
+docker container prune -f --filter until=24h
+docker image prune -af --filter until=72h
+docker volume prune -af
+docker builder prune -af --filter until=72h
+EOF2
+metric 'ci_cleanup_success 1' ci-cleanup
 
+# A failing prune is reported, and the others still run.
 : > "$CALLS"
-if JOB_STATUS=2 bash "$temporary/cleanup"; then exit 1; fi
-! grep -q '^runuser ' "$CALLS"
-grep -q '^systemctl thaw ' "$CALLS"
-
-: > "$CALLS"
-if DOCKER_FAIL=1 bash "$temporary/cleanup"; then exit 1; fi
-grep -q '^systemctl thaw ' "$CALLS"
-grep -qx 'ci_cleanup_success 0' "$temporary/metrics/ci-cleanup.prom"
-
-: > "$CALLS"
-work="$temporary/ci/fixture/_work"
-mkdir -p "$work/stale" "$work/fresh" "$work/_actions" "$work/.pnpm-store/old" "$temporary/ci/.cache/uv/archive-v0/entry" "$temporary/ci/.npm"
-touch "$work/stale/file" "$work/fresh/file" "$work/_actions/file" "$work/.pnpm-store/old/stale" "$work/.pnpm-store/fresh" "$temporary/ci/.cache/uv/archive-v0/entry/py.typed" "$temporary/ci/.npm/keep"
-# Regression: below the pressure level nothing may touch package caches. Per-file
-# aging used to delete unread 0-byte files (py.typed markers) inside uv cache
-# entries and hollow them, so installs linked trees with those files missing.
-touch -d '30 days ago' -a "$temporary/ci/.cache/uv/archive-v0/entry/py.typed" "$work/.pnpm-store/old/stale"
-mkdir -p "$temporary/ci-third/fixture-3/_work/stale" "$temporary/ci-third/fixture-3/_work/fresh"
-touch -d '30 days ago' "$temporary/ci-third/fixture-3/_work/stale"
-touch -d '30 days ago' "$work/stale"
-mkdir -p "$temporary/ci/_tool/trivy-fixture/fanal" "$temporary/ci/_tool/trivy-new" "$temporary/ci/_tool/node"
-touch "$temporary/ci/_tool/trivy-fixture/fanal/disposable" "$temporary/ci/_tool/node/keep"
-touch -d '30 days ago' "$temporary/ci/_tool/trivy-fixture"
-USED_PERCENT=40 bash "$temporary/cleanup"
-test ! -e "$work/stale"
-test -e "$work/fresh/file"
-test ! -e "$temporary/ci-third/fixture-3/_work/stale"
-test -e "$temporary/ci-third/fixture-3/_work/fresh"
-test -e "$work/_actions/file"
-test -e "$temporary/ci/.cache/uv/archive-v0/entry/py.typed"
-test -e "$work/.pnpm-store/old/stale"
-test -e "$temporary/ci/.npm/keep"
-test ! -e "$temporary/ci/_tool/trivy-fixture"
-test -e "$temporary/ci/_tool/trivy-new"
-test -e "$temporary/ci/_tool/node/keep"
-grep -q 'image prune --force$' "$CALLS"
-test "$(grep -c 'docker.sock rmi app:sha-older$' "$CALLS")" -eq 3
-test "$(grep -c 'docker.sock rmi base:' "$CALLS")" -eq 0
-! grep -q 'rmi app:sha-old$\|rmi app:latest\|rmi app:sha-new' "$CALLS"
-! grep -q 'until=1h' "$CALLS"
-grep -qx 'ci_data_used_percent 40' "$temporary/metrics/ci-disk.prom"
-grep -q 'volume rm buildx_buildkit_old_state$' "$CALLS"
-! grep -q 'volume rm keep-named-data' "$CALLS"
-grep -q 'buildx prune --builder default --force --max-used-space 5GB$' "$CALLS"
-test "$(grep -c 'buildx prune --builder default ' "$CALLS")" -eq 3
-! grep -q 'buildx prune --builder rootless ' "$CALLS"
-grep -q 'buildx prune --builder persistent --force --max-used-space 5GB$' "$CALLS"
-test "$(grep -c 'buildx prune --builder persistent ' "$CALLS")" -eq 3
-grep -q '^systemctl thaw ' "$CALLS"
-grep -qx 'ci_cleanup_success 1' "$temporary/metrics/ci-cleanup.prom"
-! grep '^runuser ' "$CALLS" | grep -v -E -- '-u ci-(fixture|second|third) -- (docker --host unix:///run/user/(999|998|997)/docker.sock|nsenter -U --preserve-credentials -t 4242 find )'
-grep -q '^nsenter -U --preserve-credentials -t 4242 find ' "$CALLS"
-! grep -q 'ci-gone\|actions-runner@gone' "$CALLS"
-
-# Under pressure, busy runners still get the safe image prune, and their caches stay.
-: > "$CALLS"
-JOB_STATUS=0 USED_PERCENT=80 bash "$temporary/cleanup"
-test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
-test "$(grep -c 'docker.sock rmi base:v0$' "$CALLS")" -eq 3
-test "$(grep -c 'rmi app:sha-old$' "$CALLS")" -eq 3
-! grep -q 'rmi base:v1\|rmi app:latest\|rmi app:sha-new' "$CALLS"
-! grep -q 'container prune\|buildx prune\|nsenter' "$CALLS"
-test -e "$temporary/ci/.cache/uv/archive-v0/entry/py.typed"
-test -e "$work/.pnpm-store/old/stale"
-test -e "$temporary/ci/.npm/keep"
-
-# Above the pressure level, idle images go after an hour, and each idle runner's
-# package caches are dropped whole so entries can never hollow.
-: > "$CALLS"
-USED_PERCENT=80 bash "$temporary/cleanup"
-test "$(grep -c 'image prune --all --force --filter until=1h$' "$CALLS")" -eq 3
-grep -q '^nsenter -U --preserve-credentials -t 4242 rm -rf --one-file-system ' "$CALLS"
-test ! -e "$work/.pnpm-store"
-test ! -e "$temporary/ci/.cache"
-test ! -e "$temporary/ci/.npm"
-grep -qx 'ci_data_used_percent 80' "$temporary/metrics/ci-disk.prom"
-echo 'PASS: per-instance daemons, per-instance busy/error skips, image age and disk-pressure pruning, failure thaw, wholesale cache reclaim under pressure, hollow-entry regression, missing-account skip, age-based retention and cleanup metrics.'
+if FAIL_ON='image prune' bash "$temporary/cleanup"; then exit 1; fi
+test "$(wc -l < "$CALLS")" -eq 4
+metric 'ci_cleanup_success 0' ci-cleanup
+metric 'ci_data_used_percent 42' ci-disk
+echo 'PASS: busy skip, idle prunes, failure metric and disk metric.'

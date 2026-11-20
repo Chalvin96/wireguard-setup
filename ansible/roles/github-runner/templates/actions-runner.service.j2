@@ -1,37 +1,30 @@
-# Managed by Ansible — runner instance {{ item.name }}
+# Managed by Ansible — runner for {{ item.repo }}
 [Unit]
-Description=GitHub Actions runner ({{ item.name }})
+Description=GitHub Actions runner ({{ item.repo }})
 Wants=network-online.target
-Requires=user@{{ getent_passwd[item.user][1] }}.service
-After=network-online.target user@{{ getent_passwd[item.user][1] }}.service
+Requires=docker.service
+After=network-online.target docker.service
 
 [Service]
-User={{ item.user }}
-Slice=user-{{ getent_passwd[item.user][1] }}.slice
-Environment=DOCKER_HOST=unix:///run/user/{{ getent_passwd[item.user][1] }}/docker.sock
-Environment=RUNNER_TOOL_CACHE={{ item.home }}/_tool
-# A private temp dir: under the shared /tmp, files one account creates (e.g. a
-# pnpm store at /tmp/.pnpm-store) block every other runner account. Inside the
-# home it also stays on the same filesystem as the runner's caches.
-Environment=TMPDIR={{ item.home }}/tmp
-# Joining the daemon's network namespace needs CAP_SYS_ADMIN once; the wrapper
-# drops it again before the runner starts.
-AmbientCapabilities=CAP_SYS_ADMIN
-CapabilityBoundingSet=CAP_SYS_ADMIN
-# The readiness probe runs `docker`, which executes CLI plugins from the runner's
-# home; it must never inherit the namespace capability.
-ExecStartPre=/usr/bin/setpriv --ambient-caps=-all --inh-caps=-all /usr/bin/install -d -m 0700 {{ item.home }}/tmp
-ExecStartPre=/usr/bin/setpriv --ambient-caps=-all --inh-caps=-all /usr/bin/timeout 60 /bin/sh -c 'until docker info >/dev/null 2>&1 && test -s /run/user/{{ getent_passwd[item.user][1] }}/dockerd-rootless/child_pid; do sleep 1; done'
-WorkingDirectory={{ item.home }}/{{ item.name }}
-ExecStart=/usr/local/sbin/actions-runner-exec {{ getent_passwd[item.user][1] }} {{ item.home }}/{{ item.name }}
+# Docker access is root-equivalent anyway; running as root keeps workspace
+# files written by containers removable by the runner.
+User=root
+Slice=ci.slice
+Environment=RUNNER_TOOL_CACHE={{ github_runner_tool_cache }}
+Environment=HOME={{ github_runner_home }}
+Environment=RUNNER_ALLOW_RUNASROOT=1
+# A private temp dir: under the shared /tmp, files one job leaves behind (e.g. a
+# pnpm store at /tmp/.pnpm-store) break others. Inside the home it also stays on
+# the same filesystem as the runner's caches.
+Environment=TMPDIR={{ github_runner_home }}/tmp
+ExecStartPre=/usr/bin/install -d -m 0700 {{ github_runner_home }}/tmp
+WorkingDirectory={{ github_runner_home }}/{{ item.repo }}
+ExecStart={{ github_runner_home }}/{{ item.repo }}/run.sh
 Restart=always
 RestartSec=10
 KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=5min
-# The instance's user slice also caps its runner and CI containers together.
-CPUQuota={{ github_runner_cpu_quota }}
-MemoryMax={{ github_runner_memory_max }}
 
 [Install]
 WantedBy=multi-user.target

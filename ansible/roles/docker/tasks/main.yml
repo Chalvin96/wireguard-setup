@@ -15,11 +15,8 @@
       - acl
     state: present
 
-- name: Configure separate applications and CI daemons
+- name: Configure the rootless applications daemon
   ansible.builtin.include_tasks: rootless.yml
-
-- name: Disable rootful Docker and provide the CI compatibility socket
-  ansible.builtin.include_tasks: rootless-cutover.yml
 
 - name: Install Node Exporter
   ansible.builtin.apt:

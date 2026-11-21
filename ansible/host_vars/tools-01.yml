@@ -1,0 +1,5 @@
+---
+# 6 vCPU / 16 GB shared with Penpot: cap CI below the whole VM. The runner
+# home and Docker data are bind-mounted from the separate CI disk.
+github_runner_slice_cpu_quota: "500%"
+github_runner_slice_memory_max: "11G"

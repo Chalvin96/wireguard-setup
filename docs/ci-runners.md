@@ -1,13 +1,22 @@
 # CI runners
 
-CI runs on a dedicated VM, `ci-01`, with one rootful Docker daemon
-(`docker.service`) and nothing else on it. The runner home
-(`github_runner_home`) and the Docker data are on its boot disk.
+CI runs on the hosts in the `ci` group, each with one rootful Docker daemon
+(`docker.service`):
+
+- `ci-01`, a dedicated always-on VM. The runner home (`github_runner_home`)
+  and the Docker data are on its boot disk.
+- `tools-01`, extra capacity while its Proxmox node is on. It also runs Penpot
+  on the rootless apps daemon; its runner home is bind-mounted from a separate
+  CI disk, and `host_vars/tools-01.yml` caps `ci.slice` below the whole VM.
+  A job running there when the node shuts down fails and must be re-run.
+
+Runners on both hosts share the same labels; GitHub gives a job to whichever
+runner is idle.
 
 ```bash
 ./run.sh bootstrap --limit ci-01 -e ansible_user=<your_user> -k -K
-./run.sh ci-01 --check --diff
-./run.sh ci-01
+./run.sh ci --check --diff
+./run.sh ci
 ```
 
 ## Runners

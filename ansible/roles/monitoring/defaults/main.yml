@@ -267,7 +267,7 @@ monitoring_ci_alerts:
     severity: warning
     measurement: !unsafe ""
     action: Check the ci-cleanup journal for the failed command.
-    expression: 1 - ci_cleanup_success{job="ci"}
+    expression: 1 - ci_cleanup_success{job=~"ci|sindri"}
   - uid: ci-cleanup-stale
     no_data: OK
     title: CI cleanup overdue
@@ -278,7 +278,7 @@ monitoring_ci_alerts:
       !unsafe "Last cleanup attempt: {{ humanizeDuration $values.A.Value
       }} ago (limit 6 h)."
     action: Check cron, active CI jobs and the ci-cleanup journal.
-    expression: time() - ci_cleanup_last_run_timestamp_seconds{job="ci"}
+    expression: time() - ci_cleanup_last_run_timestamp_seconds{job=~"ci|sindri"}
   - uid: ci-disk-high
     no_data: OK
     title: CI storage nearly full
@@ -289,7 +289,7 @@ monitoring_ci_alerts:
       !unsafe 'CI disk: {{ printf "%.0f" $values.A.Value }}% used (limit
       85%).'
     action: Check the ci-cleanup journal and CI Docker usage (docker system df).
-    expression: ci_data_used_percent{job="ci"}
+    expression: ci_data_used_percent{job=~"ci|sindri"}
 
 # Flyt API and contextual word linking (Jev). Spend is capped by the OpenRouter
 # key's credit limit. A failed Jev request fails the annotation job, which

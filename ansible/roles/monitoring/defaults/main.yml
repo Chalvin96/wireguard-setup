@@ -238,37 +238,6 @@ monitoring_sindri_alerts:
     measurement: !unsafe ""
     action: Check PostgreSQL health and available storage.
     expression: 1 - sindri_penpot_database_up{job="sindri"}
-  - uid: sindri-cleanup-failed
-    no_data: OK
-    title: Sindri CI cleanup failed
-    threshold: 0
-    duration: 1m
-    severity: warning
-    measurement: !unsafe ""
-    action: Check the ci-cleanup journal for the failed command.
-    expression: 1 - ci_cleanup_success{job="sindri"}
-  - uid: sindri-cleanup-stale
-    no_data: OK
-    title: Sindri CI cleanup overdue
-    threshold: 21600
-    duration: 15m
-    severity: warning
-    measurement:
-      !unsafe "Last cleanup attempt: {{ humanizeDuration $values.A.Value
-      }} ago (limit 6 h)."
-    action: Check cron, active CI jobs and the ci-cleanup journal.
-    expression: time() - ci_cleanup_last_run_timestamp_seconds{job="sindri"}
-  - uid: sindri-ci-disk-high
-    no_data: OK
-    title: Sindri CI storage nearly full
-    threshold: 85
-    duration: 10m
-    severity: warning
-    measurement:
-      !unsafe 'CI data volume: {{ printf "%.0f" $values.A.Value }}% used (limit
-      85%).'
-    action: Check the ci-cleanup journal and CI Docker usage (docker system df).
-    expression: ci_data_used_percent{job="sindri"}
   - uid: sindri-health-stale
     title: Sindri Penpot health collector overdue
     threshold: 180
@@ -279,6 +248,48 @@ monitoring_sindri_alerts:
       3 min)."
     action: Check the Penpot health collector timer.
     expression: time() - sindri_health_last_run_timestamp_seconds{job="sindri"}
+
+# CI VM (ci-01): runners, their Docker daemon and hourly cleanup.
+monitoring_ci_alerts:
+  - uid: ci-host-down
+    title: CI host metrics missing
+    threshold: 0
+    duration: 5m
+    severity: warning
+    measurement: !unsafe ""
+    action: Check that the CI VM is running.
+    expression: 1 - up{job="ci"}
+  - uid: ci-cleanup-failed
+    no_data: OK
+    title: CI cleanup failed
+    threshold: 0
+    duration: 1m
+    severity: warning
+    measurement: !unsafe ""
+    action: Check the ci-cleanup journal for the failed command.
+    expression: 1 - ci_cleanup_success{job="ci"}
+  - uid: ci-cleanup-stale
+    no_data: OK
+    title: CI cleanup overdue
+    threshold: 21600
+    duration: 15m
+    severity: warning
+    measurement:
+      !unsafe "Last cleanup attempt: {{ humanizeDuration $values.A.Value
+      }} ago (limit 6 h)."
+    action: Check cron, active CI jobs and the ci-cleanup journal.
+    expression: time() - ci_cleanup_last_run_timestamp_seconds{job="ci"}
+  - uid: ci-disk-high
+    no_data: OK
+    title: CI storage nearly full
+    threshold: 85
+    duration: 10m
+    severity: warning
+    measurement:
+      !unsafe 'CI disk: {{ printf "%.0f" $values.A.Value }}% used (limit
+      85%).'
+    action: Check the ci-cleanup journal and CI Docker usage (docker system df).
+    expression: ci_data_used_percent{job="ci"}
 
 # Flyt API and contextual word linking (Jev). Spend is capped by the OpenRouter
 # key's credit limit. A failed Jev request fails the annotation job, which

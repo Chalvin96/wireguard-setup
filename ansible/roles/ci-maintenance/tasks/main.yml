@@ -4,11 +4,23 @@
     name: [cron, util-linux]
     state: present
 
+- name: Install Node Exporter for host and cleanup metrics
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+
 - name: Create cleanup metrics directory
   ansible.builtin.file:
     path: /var/lib/prometheus/node-exporter
     state: directory
     mode: "0755"
+
+- name: Enable the Node Exporter textfile collector
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: "^ARGS="
+    line: 'ARGS="--collector.textfile.directory=/var/lib/prometheus/node-exporter"'
+  notify: Restart Node Exporter
 
 - name: Install CI cleanup
   ansible.builtin.template:

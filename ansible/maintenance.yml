@@ -1,6 +1,6 @@
 ---
 - name: Bound idle CI storage
-  hosts: tools
+  hosts: ci
   become: true
   roles:
     - ci-maintenance

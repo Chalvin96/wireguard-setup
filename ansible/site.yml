@@ -49,7 +49,7 @@
     - { role: app-isolation, tags: [app-isolation] }
     - { role: monitoring, tags: [monitoring] }
 
-- name: Tools VM — Penpot + self-hosted CI runners
+- name: Tools VM — Penpot
   hosts: tools
   force_handlers: true
   become: true
@@ -61,8 +61,19 @@
     - { role: docker, tags: [docker] }
     - { role: app-isolation, tags: [app-isolation] }
     - { role: penpot, tags: [penpot] }
-    - { role: github-runner, tags: [github-runner] }
     - { role: sindri-monitoring, tags: [sindri-monitoring] }
+
+- name: CI VM — self-hosted GitHub Actions runners
+  hosts: ci
+  force_handlers: true
+  become: true
+  gather_facts: true
+  gather_subset:
+    - network
+    - distribution
+  roles:
+    - { role: docker-engine, tags: [docker] }
+    - { role: github-runner, tags: [github-runner] }
     - { role: ci-maintenance, tags: [ci-maintenance] }
 
 - name: Include Proxmox host monitoring

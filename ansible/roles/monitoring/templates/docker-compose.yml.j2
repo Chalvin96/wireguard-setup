@@ -18,6 +18,10 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-data:/prometheus
+{% if flyt_metrics_target is defined %}
+      # Bearer token for Flyt /metrics; placed on the host by hand (mode 0400).
+      - ./flyt_metrics_token:/etc/prometheus/secrets/flyt_metrics_token:ro
+{% endif %}
     ports:
       - "{{ monitoring_ip }}:{{ prometheus_port }}:9090"
     command:

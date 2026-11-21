@@ -47,6 +47,23 @@
     health_alerts: "{{ monitoring_sindri_alerts }}"
     health_alert_labels: { host: tools-01, service: sindri }
     health_alert_no_data: Alerting
+    # CI moved to ci-01; rules removed from the file stay unless deleted.
+    health_alert_deleted_uids:
+      - sindri-cleanup-failed
+      - sindri-cleanup-stale
+      - sindri-ci-disk-high
+  notify: Reload Grafana alerting
+
+- name: Write CI alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/health-rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/ci.yml
+    mode: "0644"
+  vars:
+    health_alert_group: ci-health
+    health_alerts: "{{ monitoring_ci_alerts }}"
+    health_alert_labels: { host: ci-01, service: ci }
+    health_alert_no_data: Alerting
   notify: Reload Grafana alerting
 
 - name: Write Flyt API and word-linking alert rules

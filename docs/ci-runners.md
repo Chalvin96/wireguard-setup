@@ -14,12 +14,12 @@ CI runs on a dedicated VM, `ci-01`, with one rootful Docker daemon
 
 Each `github_runner_repos` entry gets `runners` runners (default 1): units
 `actions-runner@<repo>.service`, then `actions-runner@<repo>-2.service` and so
-on, each in `<github_runner_home>/<name>`. Each runner has its own
-`DOCKER_CONFIG`, so registry logins do not leak between jobs. All runners
-run as **root** and share `HOME=<github_runner_home>`: Docker access is
-root-equivalent anyway, and root can remove the workspace files that containers
-write. Each runner gets `TMPDIR=<github_runner_home>/tmp`, so files left in the
-shared `/tmp` cannot break later jobs.
+on, each in `<github_runner_home>/<name>`. All runners run as **root**: Docker
+access is root-equivalent anyway, and root can remove the workspace files that
+containers write. Each runner has its own `HOME` and `TMPDIR` under
+`<github_runner_home>/<name>`, because actions write there and concurrent jobs
+must not share them. Download caches (pnpm, uv, Node) are shared through
+`XDG_CACHE_HOME` and `XDG_DATA_HOME` under `<github_runner_home>`.
 
 The rootful daemon (`/etc/docker/daemon.json`) stores its data under
 `github_runner_docker_data_root`, binds published ports to `127.0.0.1` by

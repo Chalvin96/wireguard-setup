@@ -35,3 +35,14 @@ scrape_configs:
           - "{{ ci_ip }}:{{ node_exporter_port }}"
         labels:
           host: ci-01
+{% if flyt_metrics_target is defined %}
+
+  - job_name: flyt
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/flyt_metrics_token
+    static_configs:
+      - targets:
+          - "{{ flyt_metrics_target }}"
+{% endif %}

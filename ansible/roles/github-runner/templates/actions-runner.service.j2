@@ -1,6 +1,6 @@
-# Managed by Ansible — runner for {{ item.repo }}
+# Managed by Ansible — runner {{ item.name }} for {{ item.owner }}/{{ item.repo }}
 [Unit]
-Description=GitHub Actions runner ({{ item.repo }})
+Description=GitHub Actions runner ({{ item.name }})
 Wants=network-online.target
 Requires=docker.service
 After=network-online.target docker.service
@@ -18,8 +18,11 @@ Environment=RUNNER_ALLOW_RUNASROOT=1
 # the same filesystem as the runner's caches.
 Environment=TMPDIR={{ github_runner_home }}/tmp
 ExecStartPre=/usr/bin/install -d -m 0700 {{ github_runner_home }}/tmp
-WorkingDirectory={{ github_runner_home }}/{{ item.repo }}
-ExecStart={{ github_runner_home }}/{{ item.repo }}/run.sh
+# Per-runner Docker client config: a registry login or logout in one job must
+# not change another job's credentials.
+Environment=DOCKER_CONFIG={{ github_runner_home }}/{{ item.name }}/.docker
+WorkingDirectory={{ github_runner_home }}/{{ item.name }}
+ExecStart={{ github_runner_home }}/{{ item.name }}/run.sh
 Restart=always
 RestartSec=10
 KillMode=control-group

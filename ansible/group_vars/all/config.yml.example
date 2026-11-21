@@ -124,4 +124,5 @@ github_runner_slice_cpu_quota: "500%" # ci.slice: all runners AND their containe
 github_runner_slice_memory_max: "11G"
 github_runner_repos:
   - owner: "your-github-user"
-    repo: "your-private-repo" # one root runner per repository
+    repo: "your-private-repo"
+    runners: 1 # optional; more runners let jobs of this repo run in parallel

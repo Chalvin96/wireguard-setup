@@ -12,8 +12,10 @@ CI runs on a dedicated VM, `ci-01`, with one rootful Docker daemon
 
 ## Runners
 
-There is one runner per `github_runner_repos` entry, unit
-`actions-runner@<repo>.service`, in `<github_runner_home>/<repo>`. All runners
+Each `github_runner_repos` entry gets `runners` runners (default 1): units
+`actions-runner@<repo>.service`, then `actions-runner@<repo>-2.service` and so
+on, each in `<github_runner_home>/<name>`. Each runner has its own
+`DOCKER_CONFIG`, so registry logins do not leak between jobs. All runners
 run as **root** and share `HOME=<github_runner_home>`: Docker access is
 root-equivalent anyway, and root can remove the workspace files that containers
 write. Each runner gets `TMPDIR=<github_runner_home>/tmp`, so files left in the
@@ -29,9 +31,8 @@ connections from the LAN interface (`github_runner_lan_interface`) in
 `DOCKER-USER`, for IPv4 and IPv6.
 
 CI jobs are root on this VM. Keep runners restricted to trusted private
-repositories. Concurrent jobs share one daemon, so use unique Compose
-project names and fixed ports only where one runner per repository makes that
-safe.
+repositories. Concurrent jobs share one daemon, so workflows must not
+assume exclusive host ports or remove other jobs' containers.
 
 The runner role seeds the configured Node versions into `RUNNER_TOOL_CACHE`
 from `nodejs.org`, verifies the official SHA-256 checksums and executables, and

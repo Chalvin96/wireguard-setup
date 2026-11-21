@@ -54,6 +54,18 @@
       - sindri-ci-disk-high
   notify: Reload Grafana alerting
 
+- name: Write database backup alert rules
+  ansible.builtin.template:
+    src: grafana/provisioning/alerting/health-rules.yml.j2
+    dest: /opt/monitoring/grafana/provisioning/alerting/db.yml
+    mode: "0644"
+  vars:
+    health_alert_group: db-health
+    health_alerts: "{{ monitoring_db_alerts }}"
+    health_alert_labels: { host: db-01, service: db }
+    health_alert_no_data: Alerting
+  notify: Reload Grafana alerting
+
 - name: Write CI alert rules
   ansible.builtin.template:
     src: grafana/provisioning/alerting/health-rules.yml.j2

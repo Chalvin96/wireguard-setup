@@ -1,0 +1,92 @@
+---
+- name: Install backup and metrics tools
+  ansible.builtin.apt:
+    name: [curl, prometheus-node-exporter]
+    state: present
+    update_cache: true
+
+- name: Create the metrics textfile directory
+  ansible.builtin.file:
+    path: "{{ flyt_db_backup_metrics_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Enable the Node Exporter textfile collector
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: "^ARGS="
+    line: 'ARGS="--collector.textfile.directory={{ flyt_db_backup_metrics_dir }}"'
+  notify: Restart Node Exporter
+
+# The host runs ufw with a default-deny policy; only Prometheus may scrape.
+- name: Allow the monitoring host to scrape Node Exporter
+  ansible.builtin.command:
+    argv:
+      [
+        ufw,
+        allow,
+        proto,
+        tcp,
+        from,
+        "{{ monitoring_ip }}",
+        to,
+        any,
+        port,
+        "9100",
+        comment,
+        node-exporter,
+      ]
+  register: db_backup_ufw
+  changed_when: "'Skipping' not in db_backup_ufw.stdout"
+  when: not ansible_check_mode
+
+- name: Create the credentials directory
+  ansible.builtin.file:
+    path: /etc/flyt-backup
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write the Garage credentials
+  ansible.builtin.template:
+    src: s3.env.j2
+    dest: /etc/flyt-backup/s3.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Create the local dump directory
+  ansible.builtin.file:
+    path: "{{ flyt_db_backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+
+- name: Install the backup script
+  ansible.builtin.template:
+    src: flyt-db-backup.sh.j2
+    dest: /usr/local/sbin/flyt-db-backup
+    mode: "0750"
+
+- name: Install the backup service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - flyt-db-backup.service
+    - flyt-db-backup.timer
+  notify: Reload systemd
+
+- name: Flush handlers so the units are loaded
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the nightly backup
+  ansible.builtin.systemd:
+    name: flyt-db-backup.timer
+    enabled: true
+    state: started
+  when: not ansible_check_mode

@@ -5,6 +5,8 @@ edge_ip: "192.168.1.x"
 monitoring_ip: "192.168.1.x"
 tools_ip: "192.168.1.x"
 ci_ip: "192.168.1.x" # CI VM: GitHub Actions runners
+db_ip: "192.168.1.x" # PostgreSQL host for the app database (nightly backup)
+flyt_db_backup_s3_url: "http://192.168.1.x:3900/<bucket>" # Garage bucket URL for database dumps
 proxmox_ip: "192.168.1.x" # Proxmox metrics endpoint; root SSH for the scoped monitoring play
 proxmox_expected_disks:
   - /dev/disk/by-id/ata-MODEL_SERIAL # enumerate every expected SATA drive, even if currently offline

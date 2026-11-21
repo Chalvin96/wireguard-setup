@@ -1,0 +1,29 @@
+#!/bin/bash
+# Managed by Ansible. Dump the database and upload it to Garage. Garage
+# expires objects after 14 days; only the newest dump is kept on this host.
+set -euo pipefail
+set -a; . /etc/flyt-backup/s3.env; set +a
+dir={{ flyt_db_backup_dir }}
+metrics={{ flyt_db_backup_metrics_dir }}
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+dump="$dir/{{ flyt_db_backup_database }}-$stamp.dump"
+
+write_metric() {
+    printf '%s\n' "$@" > "$metrics/flyt-db-backup.prom.tmp"
+    mv "$metrics/flyt-db-backup.prom.tmp" "$metrics/flyt-db-backup.prom"
+}
+last_ok=$(awk '/^flyt_db_backup_last_success_timestamp_seconds/ {print $2}' "$metrics/flyt-db-backup.prom" 2>/dev/null || echo 0)
+trap 'write_metric "flyt_db_backup_success 0" "flyt_db_backup_last_attempt_timestamp_seconds $(date +%s)" "flyt_db_backup_last_success_timestamp_seconds ${last_ok:-0}"' ERR
+
+runuser -u postgres -- pg_dump -Fc --dbname {{ flyt_db_backup_database }} --file "$dump"
+runuser -u postgres -- pg_restore --list "$dump" >/dev/null
+curl -sS --fail --retry 3 --aws-sigv4 "aws:amz:garage:s3" \
+    --user "$S3_ACCESS_KEY:$S3_SECRET_KEY" -T "$dump" "$S3_URL/{{ flyt_db_backup_database }}/{{ flyt_db_backup_database }}-$stamp.dump"
+find "$dir" -name '{{ flyt_db_backup_database }}-*.dump' ! -name "{{ flyt_db_backup_database }}-$stamp.dump" -delete
+
+size=$(stat -c %s "$dump")
+write_metric "flyt_db_backup_success 1" \
+    "flyt_db_backup_last_attempt_timestamp_seconds $(date +%s)" \
+    "flyt_db_backup_last_success_timestamp_seconds $(date +%s)" \
+    "flyt_db_backup_size_bytes $size"
+echo "uploaded {{ flyt_db_backup_database }}-$stamp.dump ($size bytes)"

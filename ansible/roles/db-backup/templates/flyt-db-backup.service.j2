@@ -1,0 +1,9 @@
+# Managed by Ansible.
+[Unit]
+Description=Back up the {{ flyt_db_backup_database }} database to Garage
+After=postgresql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/flyt-db-backup

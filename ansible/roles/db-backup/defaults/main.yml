@@ -1,0 +1,6 @@
+---
+flyt_db_backup_database: flyt
+flyt_db_backup_on_calendar: "*-*-* 02:30:00 UTC"
+# Expiry (14 days) is a lifecycle rule on the bucket, not enforced here.
+flyt_db_backup_dir: /var/backups/postgresql
+flyt_db_backup_metrics_dir: /var/lib/prometheus/node-exporter

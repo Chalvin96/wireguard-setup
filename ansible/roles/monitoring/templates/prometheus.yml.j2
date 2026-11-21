@@ -35,6 +35,15 @@ scrape_configs:
           - "{{ ci_ip }}:{{ node_exporter_port }}"
         labels:
           host: ci-01
+{% if db_ip is defined %}
+
+  - job_name: db
+    static_configs:
+      - targets:
+          - "{{ db_ip }}:{{ node_exporter_port }}"
+        labels:
+          host: db-01
+{% endif %}
 {% if flyt_metrics_target is defined %}
 
   - job_name: flyt

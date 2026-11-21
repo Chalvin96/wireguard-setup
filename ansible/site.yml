@@ -63,6 +63,12 @@
     - { role: penpot, tags: [penpot] }
     - { role: sindri-monitoring, tags: [sindri-monitoring] }
 
+- name: Database host — nightly backup to object storage
+  hosts: db
+  become: true
+  roles:
+    - { role: db-backup, tags: [db-backup] }
+
 - name: CI VM — self-hosted GitHub Actions runners
   hosts: ci
   force_handlers: true

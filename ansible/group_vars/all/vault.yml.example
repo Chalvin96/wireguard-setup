@@ -43,3 +43,5 @@ vault_penpot_postgres_password: "changeme-url-safe-postgres-password"
 # Fine-grained PAT scoped to the runner repositories only,
 # permission: Administration = Read and write (needed for registration tokens).
 vault_github_runner_pat: "changeme-github-fine-grained-pat"
+vault_flyt_db_backup_s3_access_key: "GK..." # Garage key with read/write on the backup bucket only
+vault_flyt_db_backup_s3_secret_key: "..."

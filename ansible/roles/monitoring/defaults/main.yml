@@ -249,6 +249,36 @@ monitoring_sindri_alerts:
     action: Check the Penpot health collector timer.
     expression: time() - sindri_health_last_run_timestamp_seconds{job="sindri"}
 
+# Database host (db-01): nightly dump uploaded to Garage.
+monitoring_db_alerts:
+  - uid: db-host-down
+    title: Database host metrics missing
+    threshold: 0
+    duration: 5m
+    severity: warning
+    measurement: !unsafe ""
+    action: Check the database VM and its Node Exporter.
+    expression: 1 - up{job="db"}
+  - uid: db-backup-failed
+    no_data: OK
+    title: Database backup failed
+    threshold: 0
+    duration: 1m
+    severity: critical
+    measurement: !unsafe ""
+    action: Check `journalctl -u flyt-db-backup` on the database host.
+    expression: 1 - flyt_db_backup_success{job="db"}
+  - uid: db-backup-stale
+    title: Database backup overdue
+    threshold: 93600
+    duration: 15m
+    severity: critical
+    measurement:
+      !unsafe "Last successful backup: {{ humanizeDuration $values.A.Value }}
+      ago (limit 26 h)."
+    action: Check the flyt-db-backup timer and Garage on the database host.
+    expression: time() - flyt_db_backup_last_success_timestamp_seconds{job="db"}
+
 # CI VM (ci-01): runners, their Docker daemon and hourly cleanup.
 monitoring_ci_alerts:
   - uid: ci-host-down

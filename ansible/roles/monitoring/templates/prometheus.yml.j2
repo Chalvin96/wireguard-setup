@@ -28,3 +28,10 @@ scrape_configs:
           - "{{ tools_ip }}:{{ node_exporter_port }}"
         labels:
           host: tools-01
+
+  - job_name: ci
+    static_configs:
+      - targets:
+          - "{{ ci_ip }}:{{ node_exporter_port }}"
+        labels:
+          host: ci-01

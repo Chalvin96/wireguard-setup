@@ -1,0 +1,4 @@
+---
+# A dedicated 4 vCPU / 14 GB VM: leave memory for the OS outside ci.slice.
+github_runner_slice_cpu_quota: "400%"
+github_runner_slice_memory_max: "12G"

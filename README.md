@@ -100,7 +100,8 @@ outside Ansible's control.
 | **VPS** (Hetzner/DigitalOcean) | `ingress-01`    | HAProxy, WireGuard server, nftables blocklist, CrowdSec bouncer, fail2ban (SSH)              |
 | **Mini PC**                    | `edge-01`       | Caddy, CrowdSec agent + LAPI + bouncer, blocklist-import, fail2ban (SSH), Promtail, Mailrise |
 | **Monitoring VM**              | `monitoring-01` | Loki, Prometheus, Grafana (Docker Compose)                                                   |
-| **Tools host**                 | `tools-01`      | Penpot, self-hosted GitHub Actions runners, node-exporter                                    |
+| **Tools host**                 | `tools-01`      | Penpot, node-exporter                                                                        |
+| **CI VM**                      | `ci-01`         | Self-hosted GitHub Actions runners, rootful Docker for CI, node-exporter                     |
 
 ## Security Design
 
@@ -247,7 +248,7 @@ Create separate boot and service-data storage before deployment. Mount the
 service-data filesystem at `/srv` using a UUID in fstab; the roles assume it is
 already mounted. Choose storage sizes for the workload.
 
-Bind the apps and runner `/var/lib` directories from `/srv` as described in
+Bind the apps `/var/lib` directory from `/srv` as described in
 [the storage procedure](docs/rootless-docker.md). Existing hosts require a
 maintenance copy and verification; do not mount over live data.
 
@@ -255,6 +256,9 @@ maintenance copy and verification; do not mount over live data.
   with log rotation and weekly pruning.
 - **penpot** runs Penpot from `/srv/penpot`, bound to `tools_ip`, with a nightly
   `pg_dump` + assets archive into `/srv/backups/penpot`.
+
+CI runs on the separate `ci-01` VM ([CI runners](docs/ci-runners.md)):
+
 - **github-runner** configures the rootful Docker daemon for CI and registers
   one root runner per repository in `github_runner_repos`. Runners and CI
   containers share the `ci.slice` CPU/memory limits. Registration uses a
@@ -262,12 +266,10 @@ maintenance copy and verification; do not mount over live data.
 - **ci-maintenance** prunes the CI daemon hourly while no job runs.
 
 > **Private repositories only.** A self-hosted runner on a public repository
-> runs code from fork pull requests on this LAN. CI jobs are effectively root on
-> the tools host, including over Penpot's data; LAN access to CI containers is
-> blocked, but nothing else is isolated. Use a dedicated VM for untrusted
-> workloads.
+> runs code from fork pull requests on this LAN. CI jobs are root on the CI VM;
+> LAN access to CI containers is blocked.
 
-See [Docker operations](docs/rootless-docker.md) for both daemons. Future trusted services can share
+See [Docker operations](docs/rootless-docker.md) for the applications daemon. Future trusted services can share
 the applications daemon with Penpot, using separate Compose projects and
 explicit shared networks only when communication is needed.
 
@@ -364,7 +366,7 @@ roles/
 ├── monitoring/          # monitoring-01: Docker Compose observability stack
 ├── docker/              # tools-01: Docker, rootless apps daemon + weekly prune
 ├── penpot/              # tools-01: Penpot stack + nightly backup timer
-└── github-runner/       # tools-01: rootful CI daemon + root runners (private repos only)
+└── github-runner/       # ci-01: rootful CI daemon + root runners (private repos only)
 ```
 
 ## Vault Variables

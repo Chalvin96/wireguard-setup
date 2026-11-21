@@ -54,10 +54,13 @@ a replacement for scoped container cleanup.
 
 ## Cleanup and monitoring
 
-`ci-maintenance` installs Node Exporter and an hourly cleanup
-(`/etc/cron.d/ci-cleanup`) that does nothing while a job is active
-(`Runner.Worker`). Otherwise it prunes containers stopped for 24 hours, unused
-images and build cache older than 72 hours, and unused volumes. Prometheus
+`ci-maintenance` installs Node Exporter and a cleanup that runs every 20
+minutes (`/etc/cron.d/ci-cleanup`), including while jobs run: Docker never
+removes anything a running container or build uses, and with many runners a
+host is rarely idle. Each run removes containers stopped for 6 hours, dangling
+images, anonymous unused volumes, and build cache older than a day. At
+`ci_cleanup_pressure_percent` (80%) disk use it also removes all unused images,
+named volumes, and build cache. Prometheus
 scrapes the VM as job `ci`; Grafana alerts when its metrics go missing, cleanup
 fails or is overdue, or the disk passes 85%.
 

@@ -1,0 +1,3 @@
+---
+# Above this CI disk use, the cleanup also removes all unused images and cache.
+ci_cleanup_pressure_percent: 80

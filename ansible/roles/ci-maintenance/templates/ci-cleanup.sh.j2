@@ -1,5 +1,5 @@
 #!/bin/bash
-# Managed by Ansible. Prunes the rootful CI Docker daemon while no job runs.
+# Managed by Ansible. Prunes the rootful CI Docker daemon.
 set -uo pipefail
 export PATH="${PATH:-/usr/bin:/bin}:/usr/sbin:/sbin"
 metrics=/var/lib/prometheus/node-exporter
@@ -11,18 +11,28 @@ write_metrics() {
     cat > "$metrics/$1.tmp" && chmod 0644 "$metrics/$1.tmp" && mv "$metrics/$1.tmp" "$metrics/$1.prom"
 }
 
+# Prune even while jobs run: Docker never removes an image, volume or cache
+# record that a running container or build uses. Skipping busy hosts let
+# storage grow without bound once several runners shared a daemon.
+used() { df --output=pcent {{ github_runner_home | quote }} | tail -n 1 | tr -dc '0-9'; }
+
 success=1
-if pgrep -x Runner.Worker >/dev/null; then
-    echo "CI cleanup skipped: a job is active."
-else
-    docker container prune -f --filter until=24h || success=0
-    docker image prune -af --filter until=72h || success=0
+docker container prune -f --filter until=6h || success=0
+docker image prune -f || success=0
+docker volume prune -f || success=0
+docker builder prune -af --filter until=24h || success=0
+
+# Under disk pressure, also drop unused images, named volumes and all cache.
+pressure={{ ci_cleanup_pressure_percent }}
+if (( $(used || echo 0) >= pressure )); then
+    echo "CI disk at or above ${pressure}%: pruning all unused Docker data."
+    docker image prune -af || success=0
     docker volume prune -af || success=0
-    docker builder prune -af --filter until=72h || success=0
+    docker builder prune -af || success=0
 fi
 
 printf 'ci_cleanup_success %s\nci_cleanup_last_run_timestamp_seconds %s\n' "$success" "$(date +%s)" |
     write_metrics ci-cleanup
-used=$(df --output=pcent {{ github_runner_home | quote }} | tail -n 1 | tr -dc '0-9')
-[[ -z "$used" ]] || echo "ci_data_used_percent $used" | write_metrics ci-disk
+percent=$(used)
+[[ -z "$percent" ]] || echo "ci_data_used_percent $percent" | write_metrics ci-disk
 (( success ))

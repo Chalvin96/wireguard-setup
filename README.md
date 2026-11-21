@@ -263,7 +263,7 @@ CI runs on the separate `ci-01` VM ([CI runners](docs/ci-runners.md)):
   one root runner per repository in `github_runner_repos`. Runners and CI
   containers share the `ci.slice` CPU/memory limits. Registration uses a
   fine-grained PAT from the vault.
-- **ci-maintenance** prunes the CI daemon hourly while no job runs.
+- **ci-maintenance** prunes the CI daemon every 20 minutes, harder above 80% disk use.
 
 > **Private repositories only.** A self-hosted runner on a public repository
 > runs code from fork pull requests on this LAN. CI jobs are root on the CI VM;

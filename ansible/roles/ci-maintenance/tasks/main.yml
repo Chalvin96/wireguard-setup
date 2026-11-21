@@ -33,7 +33,7 @@
     name: Clean unused CI storage
     cron_file: ci-cleanup
     user: root
-    minute: "17"
+    minute: "*/20"
     job: /usr/bin/timeout --kill-after=30s 30m /usr/local/sbin/ci-cleanup 2>&1 | /usr/bin/logger -t ci-cleanup
 
 - name: Enable cron

@@ -11,16 +11,18 @@ After=network-online.target docker.service
 User=root
 Slice=ci.slice
 Environment=RUNNER_TOOL_CACHE={{ github_runner_tool_cache }}
-Environment=HOME={{ github_runner_home }}
+# Each runner has its own HOME: actions write there (e.g. pnpm/action-setup
+# into ~/setup-pnpm), and concurrent jobs must not share it. Download caches
+# are shared through XDG paths; pnpm and uv lock their stores.
+Environment=HOME={{ github_runner_home }}/{{ item.name }}/home
+Environment=XDG_CACHE_HOME={{ github_runner_home }}/.cache
+Environment=XDG_DATA_HOME={{ github_runner_home }}/.local/share
 Environment=RUNNER_ALLOW_RUNASROOT=1
 # A private temp dir: under the shared /tmp, files one job leaves behind (e.g. a
 # pnpm store at /tmp/.pnpm-store) break others. Inside the home it also stays on
 # the same filesystem as the runner's caches.
-Environment=TMPDIR={{ github_runner_home }}/tmp
-ExecStartPre=/usr/bin/install -d -m 0700 {{ github_runner_home }}/tmp
-# Per-runner Docker client config: a registry login or logout in one job must
-# not change another job's credentials.
-Environment=DOCKER_CONFIG={{ github_runner_home }}/{{ item.name }}/.docker
+Environment=TMPDIR={{ github_runner_home }}/{{ item.name }}/tmp
+ExecStartPre=/usr/bin/install -d -m 0700 {{ github_runner_home }}/{{ item.name }}/tmp {{ github_runner_home }}/{{ item.name }}/home
 WorkingDirectory={{ github_runner_home }}/{{ item.name }}
 ExecStart={{ github_runner_home }}/{{ item.name }}/run.sh
 Restart=always

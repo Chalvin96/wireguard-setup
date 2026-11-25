@@ -54,7 +54,7 @@ a replacement for scoped container cleanup.
 
 ## Cleanup and monitoring
 
-`ci-maintenance` installs Node Exporter and a cleanup that runs every 20
+`ci-maintenance` installs Node Exporter and a cleanup that runs every 30
 minutes (`/etc/cron.d/ci-cleanup`), including while jobs run: Docker never
 removes anything a running container or build uses, and with many runners a
 host is rarely idle. Each run removes containers stopped for 6 hours, dangling

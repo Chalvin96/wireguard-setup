@@ -28,12 +28,12 @@
     dest: /usr/local/sbin/ci-cleanup
     mode: "0750"
 
-- name: Schedule hourly CI cleanup
+- name: Schedule CI cleanup every 30 minutes
   ansible.builtin.cron:
     name: Clean unused CI storage
     cron_file: ci-cleanup
     user: root
-    minute: "*/20"
+    minute: "*/30"
     job: /usr/bin/timeout --kill-after=30s 30m /usr/local/sbin/ci-cleanup 2>&1 | /usr/bin/logger -t ci-cleanup
 
 - name: Enable cron
